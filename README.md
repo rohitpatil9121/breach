@@ -4,6 +4,8 @@
 
 ### A fast arena shooter for two to eight players, in the browser.
 
+**[▶ Play Practice mode now](https://rohitpatil9121.github.io/breach/)**
+
 `JavaScript` · `WebGL2` · `GLSL` · `Projection Lab engine` · `Node + ws` · `No build step`
 
 </div>
