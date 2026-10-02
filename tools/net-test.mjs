@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { BTN, MOVE, MAX_REWIND, TICK_RATE } from "../game/data.js";
 import { quantizeYaw, quantizePitch, findPlayer } from "../game/sim.js";
 import { Client, Loopback, Conditions, SocketTransport } from "../game/net.js";
-import { INTERP_TICKS, SNAP_EVERY, PROTOCOL } from "../game/protocol.js";
+import { INTERP_TICKS, SNAP_EVERY, PROTOCOL, WIRE } from "../game/protocol.js";
 import { Room } from "../server/room.mjs";
 
 let failed = 0;
@@ -152,9 +152,10 @@ for (const net of [{ latency: 0 }, { latency: 50, jitter: 10 }, { latency: 100, 
 
 // ------------------------------------------------------------------ traffic
 
-console.log("traffic: one person in a full room of bots");
-{
-    const h = harness({ bots: 8, skill: 2, length: 300 }, [{ latency: 0 }]), c = h.clients[0];
+console.log("traffic: one person in a full room of bots, for a minute");
+for (const binary of [false, true]) {
+    WIRE.binary = binary;
+    const h = harness({ bots: 8, skill: 2, length: 300, seed: 5 }, [{ latency: 0 }]), c = h.clients[0];
     h.run(3);
     let bytesIn = 0, bytesOut = 0;
     const inner = c.transport.inner, room = h.room, send = inner.send.bind(inner);
@@ -163,8 +164,9 @@ console.log("traffic: one person in a full room of bots");
     client.send = (data) => { bytesIn += typeof data === "string" ? data.length : data.byteLength; out(data); };
     const seconds = 60;
     h.run(seconds * TICK_RATE, () => { c.controls.my = 127; c.controls.yaw = quantizeYaw(h.room.state.tick * 0.02); c.controls.buttons = BTN.fire; });
-    console.log(`  info  ${room.state.players.length} players for ${seconds} s: ${(bytesIn / seconds / 1000).toFixed(1)} kB/s down, ${(bytesOut / seconds / 1000).toFixed(1)} kB/s up per client (target: under 20 down)`);
-    globalThis.__traffic = bytesIn / seconds;
+    const down = bytesIn / seconds / 1000, up = bytesOut / seconds / 1000;
+    if (binary) check("an eight-player match costs a client under 20 kB/s down", down < 20, `packed: ${down.toFixed(1)} kB/s down, ${up.toFixed(1)} kB/s up`);
+    else console.log(`  info  as JSON text: ${down.toFixed(1)} kB/s down, ${up.toFixed(1)} kB/s up`);
 }
 
 // ------------------------------------------------------------------ the real server

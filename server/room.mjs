@@ -1,7 +1,7 @@
 import { TICK_RATE, MATCH, MODES, MAX_REWIND } from "../game/data.js";
 import { createState, addPlayer, removePlayer, findPlayer, step } from "../game/sim.js";
 import { getMap, MAP_LIST } from "../game/maps/index.js";
-import { encode, decode, cleanInput, cleanText, flagsOf, SNAP_EVERY, NAME_MAX, CHAT_MAX } from "../game/protocol.js";
+import { encode, decode, cleanInput, cleanText, playerRow, SNAP_EVERY, NAME_MAX, CHAT_MAX } from "../game/protocol.js";
 import { createBrain, think } from "../game/bots.js";
 
 /**
@@ -81,7 +81,7 @@ export class Room {
      */
     join(send, name) {
         const id = this.freeId();
-        const client = { id, send, name: cleanText(name, NAME_MAX) || "Player", queue: [], lastSeq: 0, credit: CREDIT_MAX, ping: 0, pingSent: 0, pingN: 0, tokens: BURST, chatAt: -1000 };
+        const client = { id, send, name: cleanText(name, NAME_MAX) || "Player", queue: [], lastSeq: 0, credit: CREDIT_MAX, ping: 0, sent: new Map(), sentScores: new Map(), sentPickups: "", pingSent: 0, pingN: 0, tokens: BURST, chatAt: -1000 };
         this.clients.set(id, client);
         if (!this.host) this.host = id;
         // a bot gives up its place first, so the newcomer takes the side that is now short
@@ -97,6 +97,8 @@ export class Room {
         const client = this.clients.get(id);
         if (!client) return;
         this.clients.delete(id);
+        // whoever takes this id next must be sent afresh to everyone
+        for (const c of this.clients.values()) { c.sent.delete(id); c.sentScores.delete(id); }
         this.inputs.delete(id);
         removePlayer(this.state, id);
         if (this.host === id) this.host = this.clients.keys().next().value || 0;
@@ -154,7 +156,7 @@ export class Room {
             if (!this.clients.has(p.id)) continue;
             addPlayer(this.state, this.map, p.id, p.name, { team: this.smallerTeam() });
             const c = this.clients.get(p.id);
-            c.queue.length = 0; c.lastSeq = 0;
+            c.queue.length = 0; c.lastSeq = 0; c.sent.clear(); c.sentScores.clear(); c.sentPickups = "";
         }
         this.fillBots();
         this.broadcast({ t: "start", room: this.info(), tick: this.state.tick });
@@ -191,22 +193,40 @@ export class Room {
         if (this.age % TICK_RATE === 0) for (const c of this.clients.values()) { c.pingSent = this.age; this.sendTo(c, { t: "ping", n: ++c.pingN }); }
     }
 
+    /**
+     * Tell every client where things stand. Each gets its own player in full, and of everything else
+     * only what differs from the last snapshot it was sent.
+     */
     sendSnapshots() {
-        const s = this.state, round = (v) => Math.round(v * 1000) / 1000;
-        const players = s.players.map((p) => [p.id, round(p.x), round(p.y), round(p.z), p.yaw, p.pitch, flagsOf(p), p.weapon, p.kills, p.deaths, this.clients.get(p.id)?.ping || 0]);
-        const rockets = s.projectiles.map((r) => [r.id, round(r.x), round(r.y), round(r.z), round(r.vx), round(r.vy), round(r.vz)]);
-        const pickups = s.pickups.map((t) => Math.ceil(t / TICK_RATE));
+        const s = this.state;
+        const rows = s.players.map(playerRow);
+        const scores = s.players.map((p) => [p.id, p.kills, p.deaths, this.clients.get(p.id)?.ping || 0]);
+        const rockets = s.projectiles.map((r) => [r.id, r.x, r.y, r.z, r.vx, r.vy, r.vz]);
+        const pickups = s.pickups.map((t) => Math.ceil(t / TICK_RATE)), pickupKey = pickups.join(",");
         const events = this.events.map(wireEvent);
         for (const c of this.clients.values()) {
             const p = findPlayer(s, c.id);
             if (!p) continue;
-            this.sendTo(c, {
+            const changed = [], changedScores = [];
+            for (const row of rows) {
+                const was = c.sent.get(row[0]);
+                if (was && was[1] === row[1] && was[2] === row[2] && was[3] === row[3] && was[4] === row[4] && was[5] === row[5] && was[6] === row[6] && was[7] === row[7]) continue;
+                c.sent.set(row[0], row); changed.push(row);
+            }
+            for (const row of scores) {
+                const was = c.sentScores.get(row[0]);
+                if (was && was[1] === row[1] && was[2] === row[2] && was[3] === row[3]) continue;
+                c.sentScores.set(row[0], row); changedScores.push(row);
+            }
+            const message = {
                 t: "snap", tick: s.tick, ack: p.seq, ph: s.phase, tl: s.timeLeft, ot: s.overTicks, ts: s.teamScore, win: s.winner,
                 you: { x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, ground: p.ground, crouched: p.crouched, alive: p.alive,
                     health: p.health, armour: p.armour, weapon: p.weapon, has: p.has, ammo: p.ammo, cool: p.cool, spread: p.spread, zoom: p.zoom,
-                    buttons: p.buttons, protect: p.protect, overcharge: p.overcharge, respawn: p.respawn, yaw: p.yaw, pitch: p.pitch },
-                p: players, r: rockets, k: pickups, ev: events,
-            });
+                    buttons: p.buttons, protect: p.protect, overcharge: p.overcharge, respawn: Math.max(0, p.respawn), yaw: p.yaw, pitch: p.pitch },
+                p: changed, sc: changedScores, r: rockets, ev: events,
+            };
+            if (c.sentPickups !== pickupKey) { c.sentPickups = pickupKey; message.k = pickups; }
+            this.sendTo(c, message);
         }
         this.events.length = 0;
     }

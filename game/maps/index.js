@@ -40,6 +40,9 @@ function rampSolids(r) {
     return out;
 }
 
+/** a jump counts as this many extra metres when routes are compared: bots take stairs where there are stairs */
+const JUMP_COST = 7;
+
 /**
  * The waypoint graph as the bots read it: for each point, the links leaving it with their length.
  * kind 0 = walk, 1 = jump, 2 = jump pad.
@@ -48,7 +51,7 @@ function compileNav(points, links) {
     const out = points.map(() => []);
     for (const [a, b, kind] of links) {
         const p = points[a], q = points[b];
-        out[a].push({ to: b, kind, cost: Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) + (kind === 1 ? 1.5 : 0) });
+        out[a].push({ to: b, kind, cost: Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) + (kind === 1 ? JUMP_COST : 0) });
     }
     return { points, out, links };
 }

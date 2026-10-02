@@ -33,9 +33,11 @@ export function createBrain(id, skill = 2, seed = 1) {
         skill: SKILL[Math.max(1, Math.min(3, skill))], rng: (seed ^ (id * 0x9e3779b1)) >>> 0,
         seq: 0, ready: false, yaw: 0, pitch: 0,
         /** waypoint indices still to walk, and where in it the bot is */
-        path: [], cursor: 0, from: -1, goal: -1, decideAt: 0,
+        path: [], cursor: 0, from: -1, goal: -1, decideAt: 0, progressAt: 0,
+        /** on a jump pad's throw: 1 = stepping onto the pad, 2 = in the air */
+        riding: 0,
         /** who it is fighting, how long it has seen them, and where it last did */
-        target: 0, visible: false, seen: 0, last: null,
+        target: 0, visible: false, seen: 0, last: null, favourite: 1,
         err: { x: 0, y: 0, tx: 0, ty: 0, until: 0 },
         strafe: 1, strafeUntil: 0, trigger: 0,
         stuckAt: 0, sx: 0, sy: 0, stuck: 0,
@@ -118,25 +120,30 @@ export function findPath(nav, start, goal) {
 function goTo(B, nav, bot, goal) {
     const start = nearestPoint(nav, bot.x, bot.y, bot.z);
     B.path = findPath(nav, start, goal);
-    B.cursor = 0; B.from = start; B.goal = goal;
+    B.cursor = 0; B.from = start; B.goal = goal; B.progressAt = -1; B.riding = 0;
 }
 
 /** Pick somewhere worth going: what the bot needs most, or failing that, something useful or just elsewhere. */
 function decide(state, map, bot, B) {
     const nav = map.nav;
-    let best = -1, bestScore = -Infinity;
+    let best = -1, bestScore = -Infinity, armed = false;
+    for (let w = 1; w < WEAPONS.length; w++) if ((bot.has >> w) & 1 && bot.ammo[w] > 0) armed = true;
     for (let i = 0; i < map.pickups.length; i++) {
         if (state.pickups[i] > 2 * TICK_RATE) continue;                  // not there, and not about to be
         const pk = map.pickups[i], type = pk.type;
         let want = 0;
-        if (type === "health") want = bot.health < 50 ? 60 : bot.health < 90 ? 12 : 0;
-        else if (type === "armour") want = bot.armour < PLAYER.maxArmour ? 14 : 0;
-        else if (type === "overcharge") want = 30;
-        else if (type === "ammo") { for (let w = 1; w < WEAPONS.length; w++) if ((bot.has >> w) & 1 && bot.ammo[w] < WEAPONS[w].ammo[2] / 2) want = 10; }
-        else { const w = WEAPONS.findIndex((x) => x.id === type); want = (bot.has >> w) & 1 ? (bot.ammo[w] < WEAPONS[w].ammo[0] ? 8 : 0) : bot.has === 1 ? 40 : 18; }
+        if (type === "health") want = bot.health < 50 ? 60 : bot.health < 90 ? 14 : 0;
+        else if (type === "armour") want = bot.armour < PLAYER.maxArmour ? 20 : 0;
+        else if (type === "overcharge") want = 32;
+        else if (type === "ammo") { for (let w = 1; w < WEAPONS.length; w++) if ((bot.has >> w) & 1 && bot.ammo[w] < WEAPONS[w].ammo[2] / 2) want = armed ? 14 : 36; }
+        // a weapon it doesn't have is worth crossing the map for; one it has, only when it is running dry
+        else {
+            const w = WEAPONS.findIndex((x) => x.id === type), holds = (bot.has >> w) & 1 && bot.ammo[w] > 0;
+            want = holds ? (bot.ammo[w] < WEAPONS[w].ammo[0] ? 12 : 0) : (armed ? 34 : 46) + (w === B.favourite ? 22 : 0);
+        }
         if (!want) continue;
         const d = Math.hypot(pk.pos[0] - bot.x, pk.pos[1] - bot.y, (pk.pos[2] - bot.z) * 2);
-        const score = want - d * 0.9 + rand(B) * 8;
+        const score = want - d * 0.5 + rand(B) * 10;
         if (score > bestScore) { bestScore = score; best = i; }
     }
     if (best >= 0 && (bestScore > -12 || rand(B) < 0.6)) { const p = map.pickups[best].pos; goTo(B, nav, bot, nearestPoint(nav, p[0], p[1], p[2])); }
@@ -157,7 +164,9 @@ export function think(state, map, bot, B) {
     const input = B.input, sk = B.skill, tick = state.tick, nav = map.nav;
     input.seq = ++B.seq; input.mx = 0; input.my = 0; input.buttons = 0; input.weapon = 0;
     if (!bot.alive || state.phase !== "play") { B.ready = false; B.path.length = 0; B.target = 0; B.seen = 0; B.last = null; return input; }
-    if (!B.ready) { B.ready = true; B.yaw = yawOf(bot.yaw); B.pitch = 0; B.decideAt = 0; B.sx = bot.x; B.sy = bot.y; B.stuckAt = tick + 40; B.stuck = 0; }
+    // each life it fancies a different weapon, as people do; that spreads bots across the map's pickups
+    if (!B.ready) { B.favourite = 1 + Math.floor(rand(B) * (WEAPONS.length - 1));
+        B.ready = true; B.yaw = yawOf(bot.yaw); B.pitch = 0; B.decideAt = 0; B.sx = bot.x; B.sy = bot.y; B.stuckAt = tick + 40; B.stuck = 0; }
 
     const ex = bot.x, ey = bot.y, ez = bot.z + eyeHeight(bot);
 
@@ -188,7 +197,7 @@ export function think(state, map, bot, B) {
     const seeing = B.visible && target && target.alive;
     if (seeing) { B.seen++; B.last = { x: target.x, y: target.y, z: target.z, tick }; }
     else if (B.seen > 0) B.seen -= 2;
-    if (B.last && tick - B.last.tick > 5 * TICK_RATE) { B.last = null; B.target = 0; }
+    if (B.last && tick - B.last.tick > 3 * TICK_RATE) { B.last = null; B.target = 0; }
 
     // --- weapon: the one that suits the distance, out of those with rounds in them
     const dist = seeing ? Math.hypot(target.x - ex, target.y - ey, target.z - bot.z) : 12;
@@ -207,24 +216,43 @@ export function think(state, map, bot, B) {
     // --- where to go
     let wx = 0, wy = 0, jump = false, sprint = !seeing;
     const fighting = seeing && B.seen > 4;
-    if (fighting && dist < RANGE[bot.weapon] + 5 && dist > 2.5) B.path.length = 0;       // close enough: fight here
-    else if (B.last && (!B.path.length || B.goalFor !== B.last.tick)) {
+    // with only the pistol, or badly hurt, it would rather find something than chase someone
+    let armed = false;
+    for (let i = 1; i < WEAPONS.length; i++) if ((bot.has >> i) & 1 && bot.ammo[i] > 0) armed = true;
+    const needy = !armed || bot.health < 40;
+    if (B.riding) { /* in a jump pad's hands: no new plans until it lands */ }
+    else if (fighting && !needy && dist < RANGE[bot.weapon] + 5 && dist > 2.5) B.path.length = 0;       // close enough: fight here
+    else if (B.last && !needy && (!B.path.length || B.goalFor !== B.last.tick)) {
         // go to where the enemy was last seen
         if (tick % 15 === bot.id % 15 || !B.path.length) { goTo(B, nav, bot, nearestPoint(nav, B.last.x, B.last.y, B.last.z)); B.goalFor = B.last.tick; B.decideAt = tick + 4 * TICK_RATE; }
-    } else if (!B.last && (tick >= B.decideAt || B.cursor >= B.path.length)) decide(state, map, bot, B);
-    if (bot.health < 40 && !fighting && tick >= B.decideAt - 7 * TICK_RATE && B.goalKind !== "heal") { decide(state, map, bot, B); B.goalKind = "heal"; }
+    } else if ((!B.last || needy) && (tick >= B.decideAt || B.cursor >= B.path.length)) decide(state, map, bot, B);
+    if (bot.health < 40 && !fighting && !B.riding && tick >= B.decideAt - 7 * TICK_RATE && B.goalKind !== "heal") { decide(state, map, bot, B); B.goalKind = "heal"; }
     else if (bot.health >= 40) B.goalKind = "";
 
     let lookX = 0, lookY = 0, looking = false;
-    if (B.cursor < B.path.length) {
+    if (B.riding) {
+        // a jump pad has it: walk to the middle of the pad, then keep hands off until it lands
+        if (B.riding === 1) {
+            if (bot.vz > 5) { B.riding = 2; B.progressAt = tick; }                 // thrown
+            else if (tick - B.progressAt > 90) { B.riding = 0; B.path.length = 0; B.decideAt = 0; }     // never got on: think again
+            else { const pad = nav.points[B.from]; wx = pad[0] - bot.x; wy = pad[1] - bot.y; }
+        } else if (bot.ground) { B.riding = 0; B.progressAt = tick; }
+    } else if (B.cursor < B.path.length) {
         let next = nav.points[B.path[B.cursor]];
         let dx = next[0] - bot.x, dy = next[1] - bot.y, d = Math.hypot(dx, dy);
-        if (d < 0.5 && Math.abs(next[2] - bot.z) < 1.2) {
+        if (B.progressAt < 0) B.progressAt = tick;
+        // the point after a jump pad is wherever it throws: stepping on the pad is arriving
+        const here = B.path[B.cursor], after = B.path[B.cursor + 1];
+        const pad = after !== undefined && nav.out[here].some((l) => l.to === after && l.kind === 2);
+        if (d < (pad ? 1 : 0.5) && Math.abs(next[2] - bot.z) < 1.2) {
             B.from = B.path[B.cursor++];
+            B.progressAt = tick;
+            if (pad) B.riding = 1;
             if (B.cursor < B.path.length) { next = nav.points[B.path[B.cursor]]; dx = next[0] - bot.x; dy = next[1] - bot.y; d = Math.hypot(dx, dy); }
         }
-        if (B.cursor < B.path.length) {
-            if (d > 7) B.path.length = 0;                               // thrown off the route: plan again
+        if (!B.riding && B.cursor < B.path.length) {
+            // thrown off the route, or going round in circles at a waypoint it can't quite reach: plan again
+            if (d > 7 || tick - B.progressAt > 150) { B.path.length = 0; B.decideAt = 0; }
             else {
                 wx = dx / (d || 1); wy = dy / (d || 1);
                 const link = B.from >= 0 ? nav.out[B.from].find((l) => l.to === B.path[B.cursor]) : null;
@@ -273,7 +301,9 @@ export function think(state, map, bot, B) {
         e.x += (e.tx - e.x) * 0.12; e.y += (e.ty - e.y) * 0.12;
         wantYaw = exactYaw + e.x; wantPitch = exactPitch + e.y;
         const size = Math.atan2(w.pellets > 1 || w.projectile ? 0.9 : 0.4, Math.max(1, flat));
-        onTarget = seeing && Math.abs(wrap(B.yaw - exactYaw)) < size + sk.error && Math.abs(B.pitch - exactPitch) < size + sk.error;
+        // a slow, precise weapon waits until the sights are really on; the rest fire when they are near enough
+        const slack = w.zoom ? sk.error * 0.22 : sk.error;
+        onTarget = seeing && Math.abs(wrap(B.yaw - exactYaw)) < size + slack && Math.abs(B.pitch - exactPitch) < size + slack;
     } else if (looking) wantYaw = Math.atan2(lookY - bot.y, lookX - bot.x);
     else if (wx || wy) wantYaw = Math.atan2(wy, wx);
     const turn = sk.turn * DT;

@@ -222,15 +222,21 @@ export class Client {
         this.serverTick = m.tick;
         const mt = this.match;
         mt.phase = m.ph; mt.timeLeft = m.tl; mt.overTicks = m.ot; mt.teamScore = m.ts; mt.winner = m.win;
-        this.pickups = m.k;
+        if (m.k) this.pickups = m.k;
 
-        const players = new Map();
+        // a snapshot only carries the players who changed; everyone else is where they were
+        const last = this.snaps[this.snaps.length - 1], players = new Map();
+        if (last) for (const [id, row] of last.players) if (this.players.has(id)) players.set(id, row);
         for (const row of m.p) {
             players.set(row[0], row);
             const info = this.players.get(row[0]);
-            if (info) { info.flags = row[6]; info.weapon = row[7]; info.kills = row[8]; info.deaths = row[9]; info.ping = row[10]; }
+            if (info) { info.flags = row[6]; info.weapon = row[7]; }
         }
-        this.ping = players.get(this.id)?.[10] || 0;
+        for (const row of m.sc) {
+            const info = this.players.get(row[0]);
+            if (info) { info.kills = row[1]; info.deaths = row[2]; info.ping = row[3]; }
+            if (row[0] === this.id) this.ping = row[3];
+        }
         this.rockets = m.r;
         this.snaps.push({ tick: m.tick, players, rockets: m.r });
         if (this.snaps.length > BUFFER) this.snaps.shift();

@@ -95,6 +95,8 @@ export const rooftops = {
         { type: "rifle", pos: [-12, 8, TOP] }, { type: "rifle", pos: [12, -8, TOP] },
         { type: "shotgun", pos: [-11, -4, 0] }, { type: "shotgun", pos: [11, 4, 0] },
         { type: "smg", pos: [10.5, 15, 0] }, { type: "smg", pos: [-10.5, -15, 0] },
+        { type: "rifle", pos: [-18, -12, 0] }, { type: "rifle", pos: [18, 12, 0] },
+        { type: "shotgun", pos: [-14.5, 12, TOP] }, { type: "shotgun", pos: [14.5, -12, TOP] },
         { type: "health", pos: [-18, -8, 0] }, { type: "health", pos: [18, 8, 0] },
         { type: "health", pos: [-4, 9.2, TOP] }, { type: "health", pos: [4, -9.2, TOP] },
         { type: "armour", pos: [-14, 16, TOP] }, { type: "armour", pos: [14, -16, TOP] },

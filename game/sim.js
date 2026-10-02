@@ -154,7 +154,7 @@ const teams = (state) => MODES[state.mode].teams;
 export const hostile = (state, a, b) => a !== b && !(teams(state) && a.team === b.team);
 
 /**
- * A spawn point far from every living enemy: one of those at least three quarters as far as the farthest,
+ * A spawn point far from every living enemy: one of those at least 85% as far as the farthest,
  * picked at random, so the same corner isn't handed out every time (and can't be camped).
  */
 function chooseSpawn(state, map, p) {
@@ -176,9 +176,9 @@ function chooseSpawn(state, map, p) {
         if (nearest > bestDistance) { bestDistance = nearest; best = i; }
     }
     if (best < 0) return Math.floor(random(state) * map.spawns.length);
-    // distances are squared, so three quarters of the way is 9/16
+    // distances are squared, so 85% of the way is 0.7225
     let n = 0;
-    for (let k = 0; k < far.length; k += 2) if (far[k + 1] >= bestDistance * 0.5625) far[n++] = far[k];
+    for (let k = 0; k < far.length; k += 2) if (far[k + 1] >= bestDistance * 0.7225) far[n++] = far[k];
     return far[Math.floor(random(state) * n)];
 }
 const spawnScratch = [];
@@ -373,7 +373,7 @@ export function stepPlayer(map, p, input) {
     if (!p.ground) { accel = MOVE.airAccel; if (wishSpeed > MOVE.airSpeed) wishSpeed = MOVE.airSpeed; }
     const along = p.vx * wx + p.vy * wy, add = wishSpeed - along;
     if (add > 0) {
-        const gain = Math.min(add, accel * dt * wish * top);
+        const gain = Math.min(add, accel * dt * (p.ground ? wish * top : wishSpeed));
         p.vx += wx * gain; p.vy += wy * gain;
     }
 

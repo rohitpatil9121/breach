@@ -55,6 +55,12 @@ bothRamps(-13, 12, 0, -7, Y, DECK, "+x");
 box(-1.5, -12, WALL, 1.5, 12, DECK, "deck");
 for (const x of [-1, 5, 11, 17]) both(x - 0.25, 12, 0, x + 0.25, 12.5, WALL, "metal");
 
+// a booth at the far end of each walkway: somewhere to come back to life out of everyone's sight
+// (two staggered screens and a parapet: you walk an S to get out, and no line of sight makes it in)
+both(16.4, 14.3, DECK, 16.9, Y, DECK + 2.3, "wall");
+both(14.6, 12, DECK, 15.1, 13.6, DECK + 2.3, "wall");
+both(15.1, 12, DECK, X, 12.4, DECK + 2.3, "wall");
+
 // machines and cover in the corridor, so no straight is a shooting gallery
 both(-19.5, -1.5, 0, -16.5, 1.5, 3.4, "metal");
 // the pier that carries the bridge over the pit: it also hides the two ends of the pit from each other
@@ -96,7 +102,7 @@ export const foundry = {
     spawns: [
         [-18.5, 14.5, 0, -0.7], [18.5, -14.5, 0, 2.44],
         [-18.5, -14.5, 0, 0.7], [18.5, 14.5, 0, -2.44],
-        [-9.5, -7.5, 0, 0.6], [9.5, 7.5, 0, -2.54],
+        [18.4, 14.2, DECK, -2.5], [-18.4, -14.2, DECK, 0.64],
         [-3.5, -2.5, -2.5, 0.6], [3.5, 2.5, -2.5, -2.54],
     ],
     /** stand on the pad and it throws you: here, from the pit room floor up onto the bridge */
@@ -108,9 +114,12 @@ export const foundry = {
         { type: "rifle", pos: [10, 13.7, DECK] }, { type: "rifle", pos: [-10, -13.7, DECK] },
         { type: "shotgun", pos: [9.3, -7, 0] }, { type: "shotgun", pos: [-9.3, 7, 0] },
         { type: "smg", pos: [15.3, 0, 0] }, { type: "smg", pos: [-15.3, 0, 0] },
+        // one more of each by the corners, so nobody is far from a gun when they come back
+        { type: "rifle", pos: [-16, 11, 0] }, { type: "rifle", pos: [16, -11, 0] },
+        { type: "shotgun", pos: [-16, -11.5, 0] }, { type: "shotgun", pos: [16, 11.5, 0] },
         { type: "health", pos: [0, -6.5, 0] }, { type: "health", pos: [0, 6.5, 0] },
         { type: "health", pos: [-12.5, -13.7, 0] }, { type: "health", pos: [12.5, 13.7, 0] },
-        { type: "armour", pos: [-18, -13.7, DECK] }, { type: "armour", pos: [18, 13.7, DECK] },
+        { type: "armour", pos: [-3.5, -13.7, DECK] }, { type: "armour", pos: [3.5, 13.7, DECK] },
         { type: "ammo", pos: [5.5, -10.7, 0] }, { type: "ammo", pos: [-5.5, 10.7, 0] },
     ],
     lights,

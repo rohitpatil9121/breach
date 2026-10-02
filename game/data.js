@@ -32,9 +32,12 @@ export const MOVE = Object.freeze({
     friction: 7,
     /** below this speed friction acts as if the player moved this fast, so stopping is crisp */
     stopSpeed: 2.5,
-    /** in the air the player can only add up to this much speed in the wished direction: limited air control */
+    /**
+     * In the air the player can only add up to airSpeed in the wished direction, and only at airAccel times
+     * that per second: enough to steer a jump or shave a landing, not enough to stop dead or turn back.
+     */
     airSpeed: 1.1,
-    airAccel: 12,
+    airAccel: 8,
     gravity: 20,
     jump: 7.2,
     /** tallest ledge walked up without jumping; ramps are staircases of smaller steps than this */
@@ -78,12 +81,12 @@ export const HIT = Object.freeze({
  *   projectile    the launcher fires a rocket instead of a ray: speed, splash radius, self-damage share, knockback
  */
 export const WEAPONS = Object.freeze([
-    { id: "pistol", name: "Pistol", interval: 14, auto: false, pellets: 1, damage: 20, head: 1.6, spread: 0.003, spreadGrow: 0.007, spreadMax: 0.03, spreadRecover: 0.12, falloff: null, ammo: null, range: 200 },
-    { id: "smg", name: "SMG", interval: 5, auto: true, pellets: 1, damage: 9, head: 1, spread: 0.012, spreadGrow: 0.0045, spreadMax: 0.07, spreadRecover: 0.2, falloff: [10, 30, 0.4], ammo: [40, 30, 120], range: 120 },
-    { id: "shotgun", name: "Shotgun", interval: 55, auto: false, pellets: 8, damage: 12, head: 1, spread: 0.085, spreadGrow: 0, spreadMax: 0.085, spreadRecover: 1, falloff: [5, 18, 0.1], ammo: [8, 6, 24], range: 60 },
-    { id: "rifle", name: "Rifle", interval: 70, auto: false, pellets: 1, damage: 75, head: 2, spread: 0.022, zoomSpread: 0, spreadGrow: 0, spreadMax: 0.022, spreadRecover: 1, falloff: null, ammo: [6, 4, 18], range: 300, zoom: 26 },
-    { id: "launcher", name: "Launcher", interval: 55, auto: false, pellets: 0, damage: 100, head: 1, spread: 0, spreadGrow: 0, spreadMax: 0, spreadRecover: 1, falloff: null, ammo: [4, 3, 12], range: 0,
-        projectile: { speed: 30, radius: 4.5, self: 0.5, knock: 11, life: 240 } },
+    { id: "pistol", name: "Pistol", interval: 16, auto: false, pellets: 1, damage: 11, head: 2, spread: 0.003, spreadGrow: 0.008, spreadMax: 0.035, spreadRecover: 0.12, falloff: [14, 40, 0.6], ammo: null, range: 200 },
+    { id: "smg", name: "SMG", interval: 5, auto: true, pellets: 1, damage: 10, head: 1, spread: 0.012, spreadGrow: 0.0045, spreadMax: 0.065, spreadRecover: 0.22, falloff: [10, 30, 0.4], ammo: [60, 40, 150], range: 120 },
+    { id: "shotgun", name: "Shotgun", interval: 52, auto: false, pellets: 8, damage: 13, head: 1, spread: 0.08, spreadGrow: 0, spreadMax: 0.08, spreadRecover: 1, falloff: [6, 18, 0.12], ammo: [16, 10, 32], range: 60 },
+    { id: "rifle", name: "Rifle", interval: 66, auto: false, pellets: 1, damage: 80, head: 2, spread: 0.02, zoomSpread: 0, spreadGrow: 0, spreadMax: 0.02, spreadRecover: 1, falloff: null, ammo: [10, 6, 20], range: 300, zoom: 26 },
+    { id: "launcher", name: "Launcher", interval: 55, auto: false, pellets: 0, damage: 100, head: 1, spread: 0, spreadGrow: 0, spreadMax: 0, spreadRecover: 1, falloff: null, ammo: [6, 4, 12], range: 0,
+        projectile: { speed: 34, radius: 5, self: 0.5, knock: 11, life: 240 } },
 ]);
 export const WEAPON_INDEX = Object.freeze(Object.fromEntries(WEAPONS.map((w, i) => [w.id, i])));
 /** ticks a freshly drawn weapon can't fire */
@@ -96,10 +99,10 @@ export const PICKUPS = Object.freeze({
     health: { amount: 25, respawn: 15 },
     armour: { amount: 25, respawn: 15 },
     ammo: { respawn: 12 },
-    smg: { weapon: 1, respawn: 10 },
-    shotgun: { weapon: 2, respawn: 10 },
-    rifle: { weapon: 3, respawn: 12 },
-    launcher: { weapon: 4, respawn: 15 },
+    smg: { weapon: 1, respawn: 5 },
+    shotgun: { weapon: 2, respawn: 5 },
+    rifle: { weapon: 3, respawn: 7 },
+    launcher: { weapon: 4, respawn: 12 },
     overcharge: { duration: 20, respawn: 60, firstDelay: 30 },
 });
 export const PICKUP_REACH = 0.95;
