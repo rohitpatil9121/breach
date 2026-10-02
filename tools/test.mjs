@@ -7,8 +7,8 @@
  */
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { BTN, MOVE, DT } from "../game/data.js";
-import { createState, addPlayer, step, stuck, quantizeYaw, dsin, dcos } from "../game/sim.js";
+import { BTN, MOVE, DT, HIT, WEAPONS, PLAYER, HISTORY } from "../game/data.js";
+import { createState, addPlayer, step, stuck, quantizeYaw, quantizePitch, dsin, dcos } from "../game/sim.js";
 import { getMap, MAP_LIST } from "../game/maps/index.js";
 import { scriptedMatch, fingerprint } from "../game/selftest.js";
 
@@ -21,7 +21,7 @@ const near = (a, b, eps) => Math.abs(a - b) <= eps;
 
 /** One player on a map, placed by hand, driven by a function of the tick number. */
 function solo(mapId, x, y, z, yaw) {
-    const map = getMap(mapId), state = createState({ mapId }), p = addPlayer(state, map, 1);
+    const map = getMap(mapId), state = createState(map), p = addPlayer(state, map, 1);
     Object.assign(p, { x, y, z, vx: 0, vy: 0, vz: 0, ground: false });
     const input = { seq: 0, mx: 0, my: 0, buttons: 0, yaw: quantizeYaw(yaw), pitch: 0 };
     const run = (seconds, each) => {
@@ -104,9 +104,127 @@ console.log("movement on foundry");
     check("crouching is slow and low", t.p.crouched && near(crouch, MOVE.crouch, 0.05), `speed ${crouch.toFixed(2)}`);
 }
 
+/**
+ * Two players standing still: a shooter aimed at a point on the target. `at` is a height on the target.
+ * Returns helpers to pull the trigger and step.
+ */
+function duel(shooterAt, targetAt, aimZ, options = {}) {
+    const map = getMap("foundry"), state = createState(map, options.state), a = addPlayer(state, map, 1, "A", { team: 1 }), b = addPlayer(state, map, 2, "B", { team: options.sameTeam ? 1 : 2 });
+    Object.assign(a, { x: shooterAt[0], y: shooterAt[1], z: shooterAt[2], ground: true, protect: 0 });
+    Object.assign(b, { x: targetAt[0], y: targetAt[1], z: targetAt[2], ground: true, protect: 0 });
+    for (const p of [a, b]) for (let i = 0; i < HISTORY; i++) { p.hist[i * 4] = p.x; p.hist[i * 4 + 1] = p.y; p.hist[i * 4 + 2] = p.z; }
+    const input = { seq: 0, mx: 0, my: 0, buttons: 0, yaw: 0, pitch: 0, weapon: 0, lag: 0 }, inputs = new Map([[1, input]]);
+    const aimAt = (x, y, z) => {
+        const dx = x - a.x, dy = y - a.y, dz = z - (a.z + MOVE.eye);
+        input.yaw = quantizeYaw(Math.atan2(dy, dx)); input.pitch = quantizePitch(Math.atan2(dz, Math.hypot(dx, dy)));
+    };
+    aimAt(b.x, b.y, b.z + aimZ);
+    const events = [];
+    const tick = (n = 1) => { for (let i = 0; i < n; i++) { input.seq++; step(state, map, inputs); events.push(...state.events); } };
+    /** press and release the trigger once, then wait out the cooldown */
+    const shoot = () => { input.buttons = BTN.fire; tick(); input.buttons = 0; tick(WEAPONS[a.weapon].interval); };
+    const arm = (i) => { a.has |= 1 << i; a.ammo[i] = WEAPONS[i].ammo[2]; a.weapon = i; a.cool = 0; };
+    return { map, state, a, b, input, inputs, events, tick, shoot, aimAt, arm };
+}
+const count = (events, type) => events.filter((e) => e.type === type).length;
+
+console.log("shooting");
+{
+    const d = duel([-18, -8, 0], [-18, 4, 0], 1.0);
+    let shots = 0;
+    while (d.b.alive && shots < 20) { d.shoot(); shots++; }
+    check("the pistol kills in five body shots", shots === 5, `${shots} shots`);
+    check("the kill is scored", d.a.kills === 1 && d.b.deaths === 1 && count(d.events, "kill") === 1);
+    d.tick(Math.round(PLAYER.respawn * 60) - 14);
+    const s = d.map.spawns.map((sp) => Math.hypot(sp[0] - d.a.x, sp[1] - d.a.y, sp[2] - d.a.z));
+    const far = Math.hypot(d.b.x - d.a.x, d.b.y - d.a.y, d.b.z - d.a.z);
+    check("the dead respawn after three seconds, at the spawn farthest from the enemy", d.b.alive && near(far, Math.max(...s), 0.01), `${far.toFixed(1)} m away`);
+}
+{
+    const d = duel([-18, -8, 0], [-18, 4, 0], HIT.headZ);
+    let shots = 0;
+    while (d.b.alive && shots < 20) { d.shoot(); shots++; }
+    check("four pistol shots to the head", shots === 4 && d.events.some((e) => e.type === "hurt" && e.head), `${shots} shots`);
+}
+{
+    const d = duel([-18, -8, 0], [-18, 4, 0], 1.0);
+    d.input.buttons = BTN.fire;
+    d.tick(60);
+    check("holding the trigger fires the pistol once", count(d.events, "shot") === 1, `${count(d.events, "shot")} shots`);
+    d.arm(1);
+    d.events.length = 0;
+    d.tick(30);
+    check("and the SMG for as long as it is held", count(d.events, "shot") === 6, `${count(d.events, "shot")} shots in half a second`);
+}
+{
+    const d = duel([-18, -8, 0], [-8, -6, 0], 1.0);         // the pit room's west wall is between them
+    d.shoot();
+    check("a wall stops a shot", d.b.health === 100 && count(d.events, "shot") === 1);
+}
+{
+    const d = duel([-18, -8, 0], [-18, 4, 0], 1.0);
+    d.b.armour = 50;
+    d.arm(3); d.input.buttons = BTN.zoom; d.tick();
+    d.input.buttons = BTN.zoom | BTN.fire; d.tick();
+    check("armour takes two thirds", d.b.health === 75 && d.b.armour === 0, `health ${d.b.health} armour ${d.b.armour}`);
+    const e = duel([-18, -8, 0], [-18, 4, 0], HIT.headZ);
+    e.arm(3); e.input.buttons = BTN.zoom; e.tick();
+    e.input.buttons = BTN.zoom | BTN.fire; e.tick();
+    check("a rifle headshot kills outright", !e.b.alive);
+}
+{
+    const d = duel([-18, -8, 0], [-18, 4, 0], 1.0);
+    d.b.protect = 60;
+    d.shoot();
+    check("spawn protection holds", d.b.health === 100);
+    d.a.protect = 60;
+    d.shoot();
+    check("and ends when its owner fires", d.a.protect === 0);
+}
+{
+    const d = duel([-18, -8, 0], [-18, 4, 0], 1.0, { state: { mode: "tdm" }, sameTeam: true });
+    d.shoot();
+    check("teammates can't hurt each other", d.b.health === 100);
+}
+{
+    const close = duel([-18, -8, 0], [-18, -5, 0], 1.0), far = duel([-18, -8, 0], [-18, 12, 0], 1.0);
+    close.arm(2); close.shoot(); far.arm(2); far.shoot();
+    check("the shotgun is strong up close and weak far away", 100 - close.b.health >= 80 && 100 - far.b.health <= 20, `${100 - close.b.health} at 3 m, ${100 - far.b.health} at 20 m`);
+}
+{
+    // the target strafes; the shooter aims at where it was 10 ticks ago, as a client 10 ticks behind would
+    const run = (lag) => {
+        const d = duel([-18, -13, 0], [-19, 8, 0], 1.0);
+        d.inputs.set(2, { seq: 0, mx: 0, my: 127, buttons: 0, yaw: quantizeYaw(0), pitch: 0 });
+        const trail = [];
+        for (let i = 0; i < 25; i++) { d.tick(); trail.push([d.b.x, d.b.y, d.b.z]); }
+        const then = trail[trail.length - 10];      // ten ticks before the tick the shot is fired in
+        d.aimAt(then[0], then[1], then[2] + 1.0);
+        d.input.lag = lag; d.input.buttons = BTN.fire; d.tick();
+        return 100 - d.b.health;
+    };
+    check("lag compensation: a shot at where the target was lands when rewound", run(10) === 20 && run(0) === 0, `rewound ${run(10)}, not rewound ${run(0)}`);
+    const d = duel([-18, -13, 0], [-19, 8, 0], 1.0);
+    d.inputs.set(2, { seq: 0, mx: 0, my: 127, buttons: 0, yaw: quantizeYaw(0), pitch: 0 });
+    d.tick(60);
+    d.aimAt(-19, 8, 1.0);
+    d.input.lag = 60; d.input.buttons = BTN.fire; d.tick();
+    check("but never further back than the cap", d.b.health === 100);
+}
+{
+    const d = duel([-18, -8, 0], [-18, 2, 0], 0.0);
+    d.arm(4);
+    d.shoot();
+    check("a rocket at the feet hurts and throws the target", d.b.health < 30 && d.b.health > 0 && count(d.events, "explode") === 1, `health ${d.b.health}`);
+    const e = duel([-18, -8, 0], [-18, 4, 0], 1.0);
+    e.arm(4); e.input.pitch = quantizePitch(-1.4);
+    e.shoot();
+    check("a rocket at your own feet hurts half as much and lifts you", e.a.health < 100 && e.a.health >= 50 && e.a.z > 0.5, `health ${e.a.health}, z ${e.a.z.toFixed(2)}`);
+}
+
 console.log("every map, six players mashing the controls for a minute");
 for (const id of MAP_LIST) {
-    const map = getMap(id), state = createState({ seed: 3, mapId: id }), inputs = new Map();
+    const map = getMap(id), state = createState(map, { seed: 3 }), inputs = new Map();
     for (let i = 1; i <= 6; i++) { addPlayer(state, map, i); inputs.set(i, { seq: 0, mx: 0, my: 127, buttons: 0, yaw: i * 9000, pitch: 0 }); }
     let a = 12345, bad = 0, out = 0;
     const rand = () => (a = (Math.imul(a, 1664525) + 1013904223) >>> 0) / 4294967296;

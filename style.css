@@ -37,3 +37,46 @@ button.primary:hover { filter: brightness(1.1); }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 22px 0 0; font-size: 14px; }
 .keys dt { font-family: var(--mono); color: var(--ink); }
 .keys dd { margin: 0; color: var(--dim); }
+
+/* ------------------------------------------------------------------ HUD: match */
+#crosshair { background: none; box-shadow: none; width: 0; height: 0; margin: 0; --gap: 6px; }
+#crosshair i { position: absolute; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55); }
+#crosshair i:nth-child(1) { width: 2px; height: 8px; left: -1px; top: calc(-8px - var(--gap)); }
+#crosshair i:nth-child(2) { width: 2px; height: 8px; left: -1px; top: var(--gap); }
+#crosshair i:nth-child(3) { width: 8px; height: 2px; top: -1px; left: calc(-8px - var(--gap)); }
+#crosshair i:nth-child(4) { width: 8px; height: 2px; top: -1px; left: var(--gap); }
+#crosshair b { position: absolute; width: 2px; height: 2px; left: -1px; top: -1px; background: #fff; }
+#hitmarker { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; opacity: 0;
+    background: linear-gradient(45deg, transparent 46%, #fff 46% 54%, transparent 54%), linear-gradient(-45deg, transparent 46%, #fff 46% 54%, transparent 54%);
+    -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px); mask: radial-gradient(circle, transparent 5px, #000 6px); }
+#hitmarker.kill { background: linear-gradient(45deg, transparent 44%, var(--bad) 44% 56%, transparent 56%), linear-gradient(-45deg, transparent 44%, var(--bad) 44% 56%, transparent 56%); }
+#scope { position: absolute; inset: 0; opacity: 0; background: radial-gradient(circle at center, transparent 0 30vh, rgba(0, 0, 0, 0.9) 31vh); transition: opacity 0.08s; }
+#scope.on { opacity: 1; }
+#damage { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 120px 30px rgba(255, 40, 30, 0.75); }
+
+#top { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; align-items: baseline; padding: 6px 14px; background: rgba(8, 10, 14, 0.55); border-radius: 4px; font-family: var(--mono); }
+#clock { font-size: 20px; font-weight: 700; }
+#score { color: var(--dim); font-size: 14px; }
+#feed { position: absolute; top: 12px; right: 14px; margin: 0; padding: 0; list-style: none; text-align: right; font-size: 14px; }
+#feed li { margin-bottom: 4px; padding: 3px 9px; background: rgba(8, 10, 14, 0.6); border-radius: 3px; display: inline-block; clear: both; float: right; }
+#feed li.me { outline: 1px solid var(--accent); }
+#feed .how { color: var(--dim); margin: 0 6px; font-family: var(--mono); font-size: 12px; }
+
+#vitals, #arms { position: absolute; bottom: 18px; display: flex; gap: 22px; align-items: flex-end; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
+#vitals { left: 22px; }
+#arms { right: 22px; flex-direction: column; align-items: flex-end; gap: 8px; }
+.stat { display: flex; flex-direction: column; }
+.stat.right { align-items: flex-end; }
+.stat .label { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+.stat .value { font: 700 40px/1 var(--mono); }
+#health.low { color: var(--bad); }
+#weapons { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; font: 12px var(--mono); }
+#weapons li { padding: 3px 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); background: rgba(8, 10, 14, 0.5); opacity: 0.35; }
+#weapons li.has { opacity: 1; }
+#weapons li.on { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+
+#dead { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); text-align: center; text-shadow: 0 1px 3px #000; }
+#dead[hidden] { display: none; }
+#killer { margin: 0; font-size: 22px; font-weight: 700; }
+#respawn { margin: 4px 0 0; color: var(--dim); font-family: var(--mono); }
+#debug[hidden] { display: none; }

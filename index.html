@@ -8,24 +8,46 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <canvas id="view" aria-label="The arena, seen through the player's eyes"></canvas>
+    <canvas id="view" tabindex="0" aria-label="The arena, seen through the player's eyes"></canvas>
 
     <div id="hud" aria-hidden="true">
-        <div id="crosshair"></div>
-        <pre id="debug"></pre>
+        <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+        <div id="hitmarker"></div>
+        <div id="scope"></div>
+        <div id="damage"></div>
+        <div id="top">
+            <span id="clock">5:00</span>
+            <span id="score"></span>
+        </div>
+        <ul id="feed"></ul>
+        <div id="vitals">
+            <div class="stat"><span class="label">Health</span><span id="health" class="value">100</span></div>
+            <div class="stat"><span class="label">Armour</span><span id="armour" class="value">0</span></div>
+        </div>
+        <div id="arms">
+            <ol id="weapons"></ol>
+            <div class="stat right"><span id="weapon" class="label">Pistol</span><span id="ammo" class="value">∞</span></div>
+        </div>
+        <div id="dead" hidden>
+            <p id="killer"></p>
+            <p id="respawn"></p>
+        </div>
+        <pre id="debug" hidden></pre>
     </div>
 
     <div id="overlay" class="screen">
         <div class="card">
             <h1>BREACH</h1>
-            <p class="lede">Stage 1: move and look.</p>
+            <p class="lede">Stage 2: shoot. The targets stand still.</p>
             <button id="play" class="primary">Click to play</button>
             <dl class="keys">
                 <dt>W A S D</dt><dd>move</dd>
-                <dt>Mouse</dt><dd>look</dd>
+                <dt>Mouse</dt><dd>look, fire, right button to zoom</dd>
                 <dt>Space</dt><dd>jump</dd>
                 <dt>Shift</dt><dd>sprint</dd>
                 <dt>C</dt><dd>crouch</dd>
+                <dt>1 – 5, wheel</dt><dd>weapons</dd>
+                <dt>F3</dt><dd>numbers</dd>
                 <dt>Esc</dt><dd>release the mouse</dd>
             </dl>
         </div>

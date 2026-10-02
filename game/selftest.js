@@ -16,9 +16,12 @@ function lcg(seed) { let a = seed >>> 0; return () => (a = (Math.imul(a, 1664525
  * @returns {{ hash: number, state: object, map: object }}
  */
 export function scriptedMatch(mapId = "foundry", ticks = 3600, players = 6, seed = 7) {
-    const map = getMap(mapId), state = createState({ seed, mapId }), rand = lcg(seed * 977 + 1);
+    const map = getMap(mapId), state = createState(map, { seed }), rand = lcg(seed * 977 + 1);
     const inputs = new Map();
-    for (let i = 1; i <= players; i++) { addPlayer(state, map, i, "P" + i); inputs.set(i, { seq: 0, mx: 0, my: 127, buttons: 0, yaw: state.players[i - 1].yaw, pitch: 0 }); }
+    for (let i = 1; i <= players; i++) { addPlayer(state, map, i, "P" + i); inputs.set(i, { seq: 0, mx: 0, my: 127, buttons: 0, yaw: state.players[i - 1].yaw, pitch: 0, weapon: 0, lag: 0 }); }
+    // everyone starts armed to the teeth, so every weapon gets exercised
+    const arm = (p) => { p.has = 31; p.ammo = [-1, 120, 24, 18, 12]; };
+    state.players.forEach(arm);
     let hash = 0x811c9dc5;
     for (let t = 0; t < ticks; t++) {
         for (const input of inputs.values()) {
@@ -31,9 +34,13 @@ export function scriptedMatch(mapId = "foundry", ticks = 3600, players = 6, seed
             if (rand() < 0.02) input.buttons ^= BTN.sprint;
             if (rand() < 0.01) input.buttons ^= BTN.crouch;
             if (rand() < 0.05) input.buttons ^= BTN.fire;
+            if (rand() < 0.01) input.buttons ^= BTN.zoom;
+            input.weapon = rand() < 0.01 ? 1 + Math.floor(rand() * 5) : 0;
+            input.lag = Math.floor(rand() * 12) / 2;
             input.pitch = Math.round(dsin(t * 0.01) * 6000);
         }
         step(state, map, inputs);
+        for (const e of state.events) if (e.type === "spawn") arm(state.players.find((p) => p.id === e.id));
         hash = hashState(state, hash);
     }
     return { hash, state, map };
