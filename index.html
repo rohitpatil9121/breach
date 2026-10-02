@@ -46,6 +46,8 @@
         <pre id="debug" hidden></pre>
     </div>
 
+    <button id="menu-button" aria-label="Pause menu" hidden>Menu</button>
+
     <form id="chat-form" hidden>
         <label for="chat-input">Say</label>
         <input id="chat-input" type="text" maxlength="120" autocomplete="off" spellcheck="false">
@@ -84,6 +86,7 @@
                     <button id="join" disabled>Join</button>
                 </form>
             </section>
+            <button id="open-settings">Settings</button>
             <p class="foot">Built on <a href="https://rohitpatil9121.github.io/projection_library/">Projection Lab</a>.</p>
         </div>
     </main>
@@ -91,10 +94,22 @@
     <div id="pause" class="screen" hidden>
         <div class="card">
             <h1 class="small">Paused</h1>
-            <p class="lede" id="pause-note">The match carries on behind this menu.</p>
+            <p class="lede" id="pause-note">The match carries on behind this menu. Every other control is in Settings, where you can change it.</p>
             <p id="room-line" class="room" hidden>Room <strong id="room-code"></strong> <button id="invite">Copy invite link</button></p>
             <button id="resume" class="primary">Back to the match</button>
+            <button id="open-settings-2">Settings</button>
             <button id="leave">Leave the match</button>
+            <fieldset id="host" hidden>
+                <legend>This room</legend>
+                <p class="hint">You are the host. Changing these starts a new round for everyone.</p>
+                <div class="row">
+                    <label class="field" for="h-map">Map <select id="h-map"></select></label>
+                    <label class="field" for="h-mode">Mode <select id="h-mode"></select></label>
+                    <label class="field" for="h-bots">Fill with bots to <select id="h-bots"></select></label>
+                    <label class="field" for="h-skill">Bot skill <select id="h-skill"><option value="1">Easy</option><option value="2">Medium</option><option value="3">Hard</option></select></label>
+                </div>
+                <button id="host-apply">Start a new round with these</button>
+            </fieldset>
             <details id="net-test">
                 <summary>Network test</summary>
                 <p class="hint">Makes your own connection worse on purpose, to see how the game copes. F3 shows the numbers.</p>
@@ -103,16 +118,44 @@
                 <label class="slider" for="net-loss">Packet loss <output id="net-loss-out"></output><input id="net-loss" type="range" min="0" max="20" step="1" value="0"></label>
             </details>
             <dl class="keys">
-                <dt>W A S D</dt><dd>move</dd>
                 <dt>Mouse</dt><dd>look, fire, right button to zoom</dd>
-                <dt>Space</dt><dd>jump</dd>
-                <dt>Shift</dt><dd>sprint</dd>
-                <dt>C</dt><dd>crouch</dd>
-                <dt>1 – 5, Q E, wheel</dt><dd>weapons</dd>
-                <dt>Tab</dt><dd>scores</dd>
-                <dt>Enter</dt><dd>chat</dd>
+                <dt>Wheel</dt><dd>change weapon</dd>
                 <dt>F3</dt><dd>numbers</dd>
+                <dt>Esc</dt><dd>this menu</dd>
             </dl>
+        </div>
+    </div>
+
+    <div id="settings" class="screen" hidden>
+        <div class="card wide">
+            <h1 class="small">Settings</h1>
+            <section aria-labelledby="h-look">
+                <h2 id="h-look">Looking</h2>
+                <label class="slider" for="s-sensitivity">Sensitivity <output id="s-sensitivity-out"></output><input id="s-sensitivity" type="range" min="0.2" max="3" step="0.05"></label>
+                <label class="slider" for="s-fov">Field of view <output id="s-fov-out"></output><input id="s-fov" type="range" min="55" max="95" step="1"></label>
+                <label class="check" for="s-invert"><input id="s-invert" type="checkbox"> Invert up and down</label>
+            </section>
+            <section aria-labelledby="h-video">
+                <h2 id="h-video">Picture</h2>
+                <div class="row">
+                    <label class="field" for="s-quality">Quality <select id="s-quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra</option></select></label>
+                    <label class="field" for="s-motion">Reduce motion <select id="s-motion"><option value="system">As the system says</option><option value="on">On</option><option value="off">Off</option></select></label>
+                    <label class="field" for="s-scheme">Team colours <select id="s-scheme"></select></label>
+                </div>
+                <label class="check" for="s-bloom"><input id="s-bloom" type="checkbox"> Bloom (glow around bright things)</label>
+                <label class="check" for="s-shadows"><input id="s-shadows" type="checkbox"> Sun shadows</label>
+            </section>
+            <section aria-labelledby="h-sound">
+                <h2 id="h-sound">Sound</h2>
+                <label class="slider" for="s-volume">Volume <output id="s-volume-out"></output><input id="s-volume" type="range" min="0" max="1" step="0.05"></label>
+            </section>
+            <section aria-labelledby="h-keys">
+                <h2 id="h-keys">Controls</h2>
+                <p class="hint">Press a button, then the key, mouse button or gamepad button you want. Escape cancels. The wheel always changes weapon; the gamepad's right stick looks.</p>
+                <div id="bindings"></div>
+                <button id="bindings-reset">Put the controls back as they were</button>
+            </section>
+            <button id="settings-back" class="primary">Done</button>
         </div>
     </div>
 

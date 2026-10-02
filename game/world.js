@@ -214,6 +214,13 @@ export class World {
         return root;
     }
 
+    /** Sun shadows on or off (a setting; they only exist outdoors). */
+    setShadows(on) {
+        this.shadowsWanted = on;
+        if (!this.map || this.map.env.indoor) return;
+        this.scene.shadow = on ? new ShadowMap({ cascades: 3, distance: 70, size: 1536, strength: 0.8 }) : null;
+    }
+
     /** Outdoors: a dome of sky with the sun in it, and a ring of far towers with lit windows. */
     buildSky(root, sun) {
         const dome = new Entity({ name: "sky", castShadow: false, frustumCulled: false, mesh: new Mesh(primitives.sphere(340, 24, 16), skyMaterial(sun)) });
@@ -326,7 +333,7 @@ export class World {
         v.draw = Math.max(0, v.draw - dt / (SWITCH_TICKS / 60));
         const speed = Math.hypot(me.vx, me.vy);
         if (me.ground) v.bob += dt * speed * 1.5;
-        const amount = Math.min(1, speed / 8) * (me.ground ? 1 : 0.2), bx = Math.sin(v.bob) * 0.006 * amount, bz = Math.abs(Math.cos(v.bob)) * 0.005 * amount;
+        const amount = this.reducedMotion ? 0 : Math.min(1, speed / 8) * (me.ground ? 1 : 0.2), bx = Math.sin(v.bob) * 0.006 * amount, bz = Math.abs(Math.cos(v.bob)) * 0.005 * amount;
         const f = camera.forward, r = camera.right, u = camera.up, eye = camera.eye;
         // the model is a third of its size, 15 cm from the eye: it looks the same as full size at arm's length
         const S = VIEW_SCALE[me.weapon] || 0.25, ahead = 0.16 - v.kick * 0.035, side = 0.068 + bx, down = 0.066 + bz + v.draw * 0.09 - v.kick * 0.006;
@@ -349,7 +356,7 @@ export class World {
     /** The local player fired: kick the weapon and flash at its muzzle. */
     fireView(weapon) {
         const w = WEAPONS[weapon];
-        this.view.kick = Math.min(1.6, this.view.kick + (w.projectile ? 1.2 : 0.35 + w.damage * w.pellets * 0.009));
+        if (!this.reducedMotion) this.view.kick = Math.min(1.6, this.view.kick + (w.projectile ? 1.2 : 0.35 + w.damage * w.pellets * 0.009));
         this.muzzleFlash(this.muzzle, this.game.camera.forward, weapon, 0.35);
     }
 

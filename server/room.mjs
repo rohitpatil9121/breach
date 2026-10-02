@@ -171,6 +171,9 @@ export class Room {
             if (c.tokens < BURST) c.tokens = Math.min(BURST, c.tokens + RATE / TICK_RATE);
             while (c.queue.length > QUEUE_MAX) c.queue.shift();
             if (c.credit < CREDIT_MAX) c.credit++;
+            // more waiting than there is credit for (a stall longer than half a second): the oldest go, or the
+            // backlog would never clear and the player would be that far behind for good
+            if (c.queue.length > c.credit) c.queue.splice(0, c.queue.length - c.credit);
             const n = Math.min(c.queue.length, c.credit, PER_TICK);
             if (!n) { this.inputs.set(c.id, NOTHING); continue; }
             c.credit -= n;

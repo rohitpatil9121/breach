@@ -1,19 +1,21 @@
 import { Game, Camera, PostFX } from "../engine/index.js";
-import { BTN, WEAPONS, MODES, MATCH, PICKUPS, colorOf } from "./data.js";
+import { WEAPONS, MODES, MATCH, PICKUPS, TEAM_SCHEMES, teamColors, colorOf } from "./data.js";
 import { eyeHeight, quantizeYaw, quantizePitch } from "./sim.js";
 import { Client, Loopback, SocketTransport, Conditions } from "./net.js";
 import { getMap, MAP_LIST } from "./maps/index.js";
 import { World } from "./world.js";
 import { Hud } from "./hud.js";
 import { Sound, WEAPON_SOUND } from "./sound.js";
+import { Controls, ACTIONS, defaultBindings, describe } from "./controls.js";
 import { loadCharacters } from "./characters.js";
 import { fingerprint } from "./selftest.js";
 import { cleanText, NAME_MAX, PROTOCOL } from "./protocol.js";
 import { Room } from "../server/room.mjs";
 
 /**
- * BREACH: the application. Screens, input, camera. The match lives in sim.js, the room that runs it in
- * server/room.mjs, the network in net.js, the scene in world.js.
+ * BREACH: the application. Screens, settings, camera, and the wiring between the parts. The match lives
+ * in sim.js, the room that runs it in server/room.mjs, the network in net.js, the scene in world.js,
+ * the controls in controls.js.
  * @module game/main
  */
 
@@ -22,18 +24,23 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // ------------------------------------------------------------------ saved between visits
 const SAVE_KEY = "breach-save-v1";
+const DEFAULTS = { sensitivity: 1, invertY: false, fov: 74, quality: "high", bloom: true, shadows: true, volume: 0.8, reducedMotion: null, scheme: "orange-blue", bindings: defaultBindings() };
 const save = (() => {
-    const base = { name: "", practice: { map: MAP_LIST[0], mode: "dm", bots: 5, skill: 2 }, settings: { sensitivity: 1, invertY: false, fov: 74 } };
+    const base = { name: "", practice: { map: MAP_LIST[0], mode: "dm", bots: 5, skill: 2 }, settings: { ...DEFAULTS } };
     try {
-        const s = JSON.parse(localStorage.getItem(SAVE_KEY) || "{}");
-        return { ...base, ...s, practice: { ...base.practice, ...(s.practice || {}) }, settings: { ...base.settings, ...(s.settings || {}) } };
+        const s = JSON.parse(localStorage.getItem(SAVE_KEY) || "{}"), st = s.settings || {};
+        return { ...base, ...s, practice: { ...base.practice, ...(s.practice || {}) }, settings: { ...DEFAULTS, ...st, bindings: { ...DEFAULTS.bindings, ...(st.bindings || {}) } } };
     } catch { return base; }
 })();
 const persist = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch { /* storage unavailable */ } };
+const settings = save.settings;
+const systemReducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** null in the settings means "do as the system says" */
+const reducedMotion = () => settings.reducedMotion ?? systemReducedMotion;
 
 // ------------------------------------------------------------------ engine
 const canvas = $("view");
-const game = new Game({ canvas, quality: "high", antialias: false, camera: new Camera({ mode: "orbit", fov: save.settings.fov, near: 0.05, far: 400 }) });
+const game = new Game({ canvas, quality: settings.quality, antialias: false, camera: new Camera({ mode: "orbit", fov: settings.fov, near: 0.05, far: 400 }) });
 if (game.failed) throw new Error("WebGL unavailable");
 const { renderer, camera, input } = game;
 renderer.postfx = new PostFX(renderer, { bloom: { threshold: 1.1, intensity: 0.5 }, vignette: 0.22, grain: 0.012 });
@@ -41,22 +48,52 @@ renderer.postfx = new PostFX(renderer, { bloom: { threshold: 1.1, intensity: 0.5
 const world = new World(game);
 const client = new Client();
 const hud = new Hud(client);
-const sound = new Sound();
+const sound = new Sound({ volume: settings.volume });
+const controls = new Controls(input, canvas, settings);
+const view = controls.view;
+// a touch screen or a narrow window gets the compact layout (see style.css)
+const narrow = matchMedia("(max-width: 700px)");
+const compact = () => document.body.classList.toggle("compact", controls.coarse || narrow.matches);
+narrow.addEventListener("change", compact);
+compact();
 // browsers allow sound only after a click or a key press
 for (const type of ["pointerdown", "keydown"]) addEventListener(type, () => sound.start(), { once: true });
 world.onStep = (x, y, z) => sound.at("step", x, y, z, 0.9);
 
+/** Put the settings into effect. Called at start and whenever one changes. */
+function applySettings() {
+    renderer.setQuality(settings.quality);
+    renderer.postfx.settings.bloom.enabled = settings.bloom;
+    world.setShadows(settings.shadows);
+    sound.setVolume(settings.volume);
+    game.juice.reducedMotion = reducedMotion();
+    world.reducedMotion = reducedMotion();
+    teamColors.scheme = settings.scheme;
+    world.scheme = settings.scheme;
+    controls.apply();
+    persist();
+}
+
 // ------------------------------------------------------------------ screens
-/** "title": the menu over a slow fly-round. "play": in a match. "pause": in a match with the menu up. */
-let screen = "title";
-const el = { title: $("title"), pause: $("pause"), hud: $("hud") };
+/** "title": the menu over a slow turn round the arena. "play": in a match. "pause": in a match with the menu up. "settings": over either. */
+let screen = "title", settingsFrom = "title";
+const el = { title: $("title"), pause: $("pause"), settings: $("settings"), hud: $("hud"), menu: $("menu-button") };
 function show(name) {
+    if (name === "settings") settingsFrom = screen === "settings" ? settingsFrom : screen;
     screen = name;
+    const inMatch = name === "play" || name === "pause" || (name === "settings" && settingsFrom !== "title");
     el.title.hidden = name !== "title";
     el.pause.hidden = name !== "pause";
-    el.hud.hidden = name === "title";
-    camera.mode = name === "title" ? "orbit" : "firstPerson";
+    el.settings.hidden = name !== "settings";
+    el.hud.hidden = !inMatch;
+    el.menu.hidden = name !== "play" || !controls.coarse;
+    camera.mode = inMatch ? "firstPerson" : "orbit";
+    controls.active = name === "play";
+    controls.showTouch(name === "play");
+    if (name !== "play") for (const code of [...input.down]) input.release(code);
     if (name === "title") { camera.fov = 55; $("practice").focus(); }
+    else if (name === "pause") { refreshHost(); $("resume").focus(); }
+    else if (name === "settings") $("settings-back").focus();
 }
 
 /**
@@ -64,8 +101,10 @@ function show(name) {
  * refusal isn't an error: the match shows a hint and a click on the view asks again.
  */
 function lockMouse() {
+    if (controls.coarse) return;
     try { const asked = canvas.requestPointerLock(); if (asked && asked.catch) asked.catch(() => {}); } catch { /* not available */ }
 }
+function resume() { show("play"); lockMouse(); canvas.focus(); }
 
 /** latency, jitter and loss added to the link on purpose, from the pause menu, to see how the netcode holds up */
 const conditions = { latency: 0, jitter: 0, loss: 0 };
@@ -81,9 +120,7 @@ function startPractice() {
     link.settings = conditions;
     client.attach(link);
     link.connect(playerName());
-    show("play");
-    lockMouse();
-    canvas.focus();
+    resume();
 }
 
 // ------------------------------------------------------------------ online
@@ -125,10 +162,8 @@ function playOnline(hello) {
     client.attach(link);
     link.onopen = () => client.send({ t: "hello", v: PROTOCOL, name: playerName(), ...hello });
     link.connect();
-    show("play");
+    resume();
     hud.notice("Connecting…", 20);
-    lockMouse();
-    canvas.focus();
 }
 
 function leave() {
@@ -138,13 +173,21 @@ function leave() {
     if (document.pointerLockElement) input.unlockPointer();
 }
 
-function playerName() { return cleanText($("name").value, NAME_MAX) || "Player"; }
+function toTitle() {
+    leave();
+    history.replaceState(null, "", location.pathname + location.search);
+    world.loadMap(getMap(save.practice.map));
+    show("title");
+}
 
-// the title form
+function playerName() { return cleanText($("name").value, NAME_MAX) || "Player"; }
+const fill = (select, options, value) => { select.replaceChildren(...options.map(([v, text]) => new Option(text, v))); select.value = String(value); };
+const MAP_OPTIONS = MAP_LIST.map((id) => [id, getMap(id).name]), MODE_OPTIONS = Object.entries(MODES).map(([id, m]) => [id, m.name]);
+
+// ------------------------------------------------------------------ the title form
 {
-    const fill = (select, options, value) => { select.replaceChildren(...options.map(([v, text]) => new Option(text, v))); select.value = String(value); };
-    fill($("p-map"), MAP_LIST.map((id) => [id, getMap(id).name]), save.practice.map);
-    fill($("p-mode"), Object.entries(MODES).map(([id, m]) => [id, m.name]), save.practice.mode);
+    fill($("p-map"), MAP_OPTIONS, save.practice.map);
+    fill($("p-mode"), MODE_OPTIONS, save.practice.mode);
     fill($("p-bots"), Array.from({ length: MATCH.maxPlayers - 1 }, (_, i) => [i + 1, String(i + 1)]), save.practice.bots);
     $("p-skill").value = String(save.practice.skill);
     $("name").value = save.name;
@@ -166,30 +209,104 @@ function playerName() { return cleanText($("name").value, NAME_MAX) || "Player";
     if (invited.length === 4) code.value = invited;
     probe();
 }
-$("resume").addEventListener("click", () => { show("play"); lockMouse(); canvas.focus(); });
+
+// ------------------------------------------------------------------ the pause menu
+$("resume").addEventListener("click", resume);
+$("leave").addEventListener("click", () => { toTitle(); probe(); });
+$("invite").addEventListener("click", async () => {
+    const link = location.origin + location.pathname + location.search + "#" + client.room.code;
+    try { await navigator.clipboard.writeText(link); $("invite").textContent = "Link copied"; } catch { prompt("Invite link", link); }
+});
 for (const [id, key, unit, scale] of [["net-latency", "latency", " ms", 1], ["net-jitter", "jitter", " ms", 1], ["net-loss", "loss", " %", 0.01]]) {
     const slider = $(id), out = $(id + "-out");
     const apply = () => { conditions[key] = +slider.value * scale; out.textContent = slider.value + unit; };
     slider.addEventListener("input", apply);
     apply();
 }
-$("leave").addEventListener("click", () => { toTitle(); probe(); });
-$("invite").addEventListener("click", async () => {
-    const link = location.origin + location.pathname + location.search + "#" + client.room.code;
-    try { await navigator.clipboard.writeText(link); $("invite").textContent = "Link copied"; } catch { prompt("Invite link", link); }
-});
-function toTitle(message) {
-    leave();
-    history.replaceState(null, "", location.pathname + location.search);
-    world.loadMap(getMap(save.practice.map));
-    show("title");
-    if (message) $("server-status").textContent = message;
+// the host can change the room: map, mode, bots. Applying it starts a new round for everyone.
+fill($("h-map"), MAP_OPTIONS, MAP_LIST[0]);
+fill($("h-mode"), MODE_OPTIONS, "dm");
+fill($("h-bots"), Array.from({ length: MATCH.maxPlayers + 1 }, (_, i) => [i, i ? String(i) : "None"]), 0);
+function refreshHost() {
+    const mine = client.joined && client.hostId === client.id && client.room;
+    $("host").hidden = !mine;
+    if (!mine) return;
+    $("h-map").value = client.room.map; $("h-mode").value = client.room.mode; $("h-bots").value = String(client.room.bots); $("h-skill").value = String(client.room.skill || 2);
 }
+$("host-apply").addEventListener("click", () => {
+    client.send({ t: "setup", map: $("h-map").value, mode: $("h-mode").value, bots: +$("h-bots").value, skill: +$("h-skill").value });
+    resume();
+});
+el.menu.addEventListener("click", () => show("pause"));
 canvas.addEventListener("click", () => { if (screen === "play" && !input.pointer.locked) lockMouse(); });
-const coarse = matchMedia("(pointer: coarse)").matches;
 // Escape releases the mouse (the browser does that itself); the pause menu follows
-document.addEventListener("pointerlockchange", () => { if (!document.pointerLockElement && screen === "play") show("pause"); });
-addEventListener("keydown", (e) => { if (e.code === "F3") { e.preventDefault(); $("debug").hidden = !$("debug").hidden; } });
+let lockLost = 0;
+document.addEventListener("pointerlockchange", () => { if (!document.pointerLockElement && screen === "play") { lockLost = performance.now(); show("pause"); } });
+addEventListener("keydown", (e) => {
+    if (e.code === "F3") { e.preventDefault(); $("debug").hidden = !$("debug").hidden; }
+    // without a captured mouse (a gamepad, a refused lock) Escape still has to work as a pause key
+    else if (e.code === "Escape" && performance.now() - lockLost > 400) {
+        if (screen === "play" && !document.pointerLockElement && chatForm.hidden) show("pause");
+        else if (screen === "pause") resume();
+        else if (screen === "settings" && !capturing) show(settingsFrom);
+    }
+});
+
+// ------------------------------------------------------------------ the settings screen
+let capturing = false;
+{
+    const bind = (id, key, read, write, event = "input") => {
+        const node = $(id);
+        write(node, settings[key]);
+        node.addEventListener(event, () => { settings[key] = read(node); applySettings(); labels(); });
+    };
+    const number = (n) => +n.value, checked = (n) => n.checked, value = (n) => n.value;
+    const setValue = (n, v) => { n.value = String(v); }, setChecked = (n, v) => { n.checked = !!v; };
+    const labels = () => {
+        $("s-sensitivity-out").textContent = settings.sensitivity.toFixed(2);
+        $("s-fov-out").textContent = settings.fov + "°";
+        $("s-volume-out").textContent = Math.round(settings.volume * 100) + "%";
+    };
+    bind("s-sensitivity", "sensitivity", number, setValue);
+    bind("s-invert", "invertY", checked, setChecked, "change");
+    bind("s-fov", "fov", number, setValue);
+    bind("s-quality", "quality", value, setValue, "change");
+    bind("s-bloom", "bloom", checked, setChecked, "change");
+    bind("s-shadows", "shadows", checked, setChecked, "change");
+    bind("s-volume", "volume", number, setValue);
+    fill($("s-scheme"), Object.entries(TEAM_SCHEMES).map(([id, s]) => [id, s.name]), settings.scheme);
+    bind("s-scheme", "scheme", value, setValue, "change");
+    // reduce motion: follow the system, or say so yourself
+    $("s-motion").value = settings.reducedMotion === null ? "system" : settings.reducedMotion ? "on" : "off";
+    $("s-motion").addEventListener("change", () => { const v = $("s-motion").value; settings.reducedMotion = v === "system" ? null : v === "on"; applySettings(); });
+    labels();
+
+    // key bindings: one row per action; press the button, then the key (or mouse or gamepad button) you want
+    const list = $("bindings");
+    const rows = () => {
+        list.replaceChildren(...ACTIONS.map((a) => {
+            const row = document.createElement("div"), label = document.createElement("span"), button = document.createElement("button"), pad = document.createElement("span");
+            const d = describe(settings.bindings[a.id] || []);
+            row.className = "binding"; label.textContent = a.label; button.textContent = d.keys; pad.className = "pad"; pad.textContent = d.pad === "none" ? "" : d.pad;
+            button.setAttribute("aria-label", `${a.label}: ${d.keys}. Press to change.`);
+            button.addEventListener("click", async () => {
+                if (capturing) return;
+                capturing = true;
+                button.textContent = "Press a key…"; button.classList.add("listening");
+                await controls.capture(a.id);
+                capturing = false;
+                persist(); rows();
+                [...list.querySelectorAll("button")][ACTIONS.indexOf(a)].focus();
+            });
+            row.append(label, button, pad);
+            return row;
+        }));
+    };
+    rows();
+    $("bindings-reset").addEventListener("click", () => { settings.bindings = defaultBindings(); controls.settings = settings; applySettings(); rows(); });
+    $("settings-back").addEventListener("click", () => show(settingsFrom));
+    for (const id of ["open-settings", "open-settings-2"]) $(id).addEventListener("click", () => show("settings"));
+}
 
 // ------------------------------------------------------------------ what the match tells us
 client.on("welcome", () => {
@@ -202,10 +319,18 @@ client.on("welcome", () => {
     $("room-code").textContent = client.room.code;
     $("invite").textContent = "Copy invite link";
 });
-client.on("start", () => { world.loadMap(client.map); sound.ambience(client.map.env.indoor); hud.notice("New round"); });
+client.on("start", () => { world.loadMap(client.map); sound.ambience(client.map.env.indoor); hud.notice(`${client.map.name} · ${MODES[client.room.mode].name}`); });
+client.on("roster", () => { if (screen === "pause") refreshHost(); });
 client.on("chat", (m) => { hud.chat(m); sound.play("chat", 0.6); });
+client.on("close", (reason) => {
+    // keep the room's code in the box, so one press of Join tries again
+    const was = client.room && client.room.code !== "PRACTICE" ? client.room.code : online.last && online.last.room;
+    toTitle();
+    if (was) $("code").value = was;
+    probe().then(() => { $("server-status").textContent = (reason || "Disconnected.") + (was && online.up ? ` Press Join to go back to room ${was}.` : ""); if (was && online.up) $("join").focus(); });
+});
 
-// chat: Enter opens the box, Enter sends, Escape or an empty line closes it
+// chat: its key opens the box, Enter sends, Escape or an empty line closes it
 const chatForm = $("chat-form"), chatInput = $("chat-input");
 function openChat() {
     if (screen !== "play" || !client.joined) return;
@@ -223,20 +348,17 @@ chatForm.addEventListener("submit", (e) => {
 });
 chatInput.addEventListener("keydown", (e) => { if (e.code === "Escape") closeChat(); e.stopPropagation(); });
 chatInput.addEventListener("blur", () => { chatForm.hidden = true; });
-addEventListener("keydown", (e) => { if ((e.code === "Enter" || e.code === "KeyT") && chatForm.hidden && screen === "play" && e.target === canvas || (e.code === "Enter" && chatForm.hidden && screen === "play" && e.target === document.body)) { e.preventDefault(); openChat(); } });
-client.on("close", (reason) => {
-    // keep the room's code in the box, so one press of Join tries again
-    const was = client.room && client.room.code !== "PRACTICE" ? client.room.code : online.last && online.last.room;
-    toTitle();
-    if (was) $("code").value = was;
-    probe().then(() => { $("server-status").textContent = (reason || "Disconnected.") + (was && online.up ? ` Press Join to go back to room ${was}.` : ""); if (was && online.up) $("join").focus(); });
+addEventListener("keydown", (e) => {
+    const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(e.target.tagName);
+    if (screen === "play" && chatForm.hidden && !typing && (settings.bindings.chat || []).includes(e.code)) { e.preventDefault(); openChat(); }
 });
+
 client.on("shot", (me) => {
     // my own shot, shown and heard the moment the trigger breaks; the server decides what it hit
     const w = WEAPONS[me.weapon];
     world.fireView(me.weapon);
     sound.play(WEAPON_SOUND[me.weapon], 0.8, 0.97 + Math.random() * 0.06);
-    view.kick = Math.min(0.06, view.kick + (w.projectile ? 0.03 : 0.006 + w.damage * w.pellets * 0.00025));
+    if (!reducedMotion()) view.kick = Math.min(0.06, view.kick + (w.projectile ? 0.03 : 0.006 + w.damage * w.pellets * 0.00025));
 });
 const spot = [0, 0, 0];
 /** Where a player is right now, as far as this client knows (for placing a sound or an effect). */
@@ -284,57 +406,12 @@ client.on("event", (e) => {
     }
 });
 
-// ------------------------------------------------------------------ input
-input.bindAxis("moveX", { negative: ["KeyA", "ArrowLeft"], positive: ["KeyD", "ArrowRight"], gamepad: "LeftX" });
-input.bindAxis("moveY", { negative: ["KeyS", "ArrowDown"], positive: ["KeyW", "ArrowUp"] });
-input.bind("jump", ["Space", "GamepadA"]);
-input.bind("sprint", ["ShiftLeft", "ShiftRight", "GamepadLS"]);
-input.bind("crouch", ["KeyC", "GamepadB"]);
-input.bind("fire", ["Mouse0", "GamepadRT"]);
-input.bind("zoom", ["Mouse2", "GamepadLT"]);
-for (let i = 1; i <= 5; i++) input.bind("weapon" + i, ["Digit" + i]);
-input.bind("nextWeapon", ["KeyE", "GamepadRB"]);
-input.bind("prevWeapon", ["KeyQ", "GamepadLB"]);
-input.bind("scores", ["Tab", "GamepadBack"]);
-
-/** where the player is looking, in radians. Turned by the mouse as events arrive, not once per tick. */
-const view = { yaw: 0, pitch: 0, kick: 0 };
-document.addEventListener("mousemove", (e) => {
-    if (!input.pointer.locked || screen !== "play") return;
-    const s = 0.0022 * save.settings.sensitivity * (camera.fov / save.settings.fov);      // slower while zoomed, in proportion
-    view.yaw -= e.movementX * s;
-    view.pitch = clamp(view.pitch - e.movementY * s * (save.settings.invertY ? -1 : 1), -1.5, 1.5);
-});
-
-/** The owned weapon `step` slots along from the one in hand, as a slot number 1..5. */
-function cycleWeapon(step) {
-    const me = client.me, n = WEAPONS.length;
-    for (let k = 1; k <= n; k++) { const i = (me.weapon + step * k + n * n) % n; if ((me.has >> i) & 1) return i + 1; }
-    return 0;
-}
-
 // ------------------------------------------------------------------ loop
-let wheel = 0;
 game.onUpdate(() => {
-    if (screen === "title") return;
-    const playing = screen === "play";
-    let buttons = 0, weapon = 0, mx = 0, my = 0;
-    if (playing) {
-        if (input.isDown("jump")) buttons |= BTN.jump;
-        if (input.isDown("sprint")) buttons |= BTN.sprint;
-        if (input.isDown("crouch")) buttons |= BTN.crouch;
-        if (input.isDown("fire")) buttons |= BTN.fire;
-        if (input.isDown("zoom")) buttons |= BTN.zoom;
-        for (let i = 1; i <= 5; i++) if (input.wasPressed("weapon" + i)) weapon = i;
-        wheel += input.pointer.wheel;
-        if (input.wasPressed("nextWeapon") || wheel > 60) { weapon = cycleWeapon(1); wheel = 0; }
-        if (input.wasPressed("prevWeapon") || wheel < -60) { weapon = cycleWeapon(-1); wheel = 0; }
-        // the gamepad's left stick pushes down for forward; keys and touch push up
-        const padY = -input.stick("LeftY"), keyY = input.axis("moveY");
-        my = Math.abs(padY) > Math.abs(keyY) ? padY : keyY;
-        mx = input.axis("moveX");
-    }
-    client.tick({ mx: Math.round(clamp(mx, -1, 1) * 127), my: Math.round(clamp(my, -1, 1) * 127), buttons, weapon, yaw: quantizeYaw(view.yaw), pitch: quantizePitch(view.pitch) });
+    if (input.wasPressed("pause")) { if (screen === "play") show("pause"); else if (screen === "pause") resume(); }
+    if (screen === "title" || !client.transport) return;
+    const c = controls.gather(client.me);
+    client.tick({ mx: c.mx, my: c.my, buttons: c.buttons, weapon: c.weapon, yaw: quantizeYaw(view.yaw), pitch: quantizePitch(view.pitch) });
     if (room) room.tick();
 });
 
@@ -353,14 +430,16 @@ function feet(me, dt) {
 const eye = { z: 0 }, at = { x: 0, y: 0, z: 0 };
 let since = 1;
 game.onRender((frameDelta, alpha) => {
-    if (screen === "title") {
-        // a slow turn around the arena behind the menu
-        camera.target.set([0, 0, 3.4]); camera.distance = 9.5; camera.pitch = 0.3; camera.yaw += frameDelta * 0.06;
+    if (!client.transport) {
+        // a slow turn around the arena behind the menu (still, for anyone who asked for less motion)
+        camera.target.set([0, 0, 3.4]); camera.distance = 9.5; camera.pitch = 0.3;
+        if (!reducedMotion()) camera.yaw += frameDelta * 0.06;
         world.update(client, frameDelta);
         return;
     }
     client.frame(frameDelta);
     const me = client.me;
+    controls.look(frameDelta);
     client.myPosition(alpha, at);
     const target = at.z + eyeHeight(me);
     eye.z += (target - eye.z) * (1 - Math.exp(-frameDelta * (me.ground ? 20 : 45)));
@@ -368,8 +447,9 @@ game.onRender((frameDelta, alpha) => {
     camera.position[0] = at.x; camera.position[1] = at.y; camera.position[2] = eye.z;
     view.kick *= Math.exp(-frameDelta * 9);
     camera.yaw = view.yaw; camera.pitch = clamp(view.pitch + view.kick, -1.55, 1.55);
-    const fov = me.zoom && me.alive ? WEAPONS[me.weapon].zoom : save.settings.fov;
+    const fov = me.zoom && me.alive ? WEAPONS[me.weapon].zoom : settings.fov;
     camera.fov += (fov - camera.fov) * (1 - Math.exp(-frameDelta * 18));
+    controls.zoomScale = camera.fov / settings.fov;         // slower turning while zoomed, in proportion
     // the weapon in hand and the listener both follow the camera, so work out where it is now
     camera.update(0);
     world.syncView(camera, me, frameDelta, client.joined && client.match.phase === "play");
@@ -383,20 +463,21 @@ game.onRender((frameDelta, alpha) => {
         since = 0;
         const s = renderer.stats, n = client.stats;
         debug = `pos ${me.x.toFixed(1)} ${me.y.toFixed(1)} ${me.z.toFixed(2)}   speed ${Math.hypot(me.vx, me.vy).toFixed(1)}   ${me.ground ? "ground" : "air"}${me.crouched ? " crouch" : ""}`
-            + `\n${Math.round(game.loop.fps)} fps   ${s.drawCalls} draws   ${(s.triangles / 1000).toFixed(1)}k tris`
+            + `\n${Math.round(game.loop.fps)} fps  ${game.loop.frameMs.toFixed(1)} ms   ${s.drawCalls} draws   ${s.shadowCalls} shadow draws   ${(s.triangles / 1000).toFixed(1)}k tris`
             + `\nping ${client.ping} ms   in ${(n.bytesIn / 1000).toFixed(1)} kB/s   out ${(n.bytesOut / 1000).toFixed(1)} kB/s   ${n.snaps} snaps/s`
             + `\nreplayed ${n.replayed}   corrections ${n.corrections}   last error ${n.lastError.toFixed(3)} m`;
     }
-    if (screen === "play" && !input.pointer.locked && !coarse && client.match.phase === "play") hud.notice("Click to take the mouse", 0.3);
+    if (screen === "play" && !input.pointer.locked && !controls.coarse && input.gamepadIndex < 0 && client.match.phase === "play") hud.notice("Click to take the mouse", 0.3);
     hud.nameTags(camera, canvas.clientWidth, canvas.clientHeight);
-    hud.scores(input.isDown("scores"), frameDelta);
+    hud.scores(controls.active && input.isDown("scores"), frameDelta);
     hud.update(frameDelta, debug);
 });
 
 await loadCharacters();
+applySettings();
 world.loadMap(getMap(save.practice.map));
 show("title");
 game.start();
 
 /** console hook, for poking at the game and for the tools */
-window.breach = { game, world, client, hud, sound, view, input, save, fingerprint, startPractice, playOnline, online, conditions, get room() { return room; }, get screen() { return screen; } };
+window.breach = { game, world, client, hud, sound, controls, view, input, save, settings, fingerprint, compact, startPractice, playOnline, online, conditions, applySettings, show, get room() { return room; }, get screen() { return screen; } };

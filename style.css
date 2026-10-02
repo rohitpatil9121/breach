@@ -101,6 +101,37 @@ select option { background: #14181f; color: var(--ink); }
 .foot { margin: 24px 0 0; font-size: 13px; color: var(--dim); }
 .foot a { color: var(--ink); }
 
+/* ------------------------------------------------------------------ settings */
+#settings button:not(.primary), #title #open-settings { width: 100%; }
+#settings-back { margin-top: 22px; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 15px; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+#bindings { display: grid; gap: 6px; margin-bottom: 12px; }
+.binding { display: grid; grid-template-columns: 1fr minmax(120px, 170px) 74px; gap: 10px; align-items: center; font-size: 15px; }
+.binding button { width: 100%; min-height: 40px; font-family: var(--mono); font-size: 13px; }
+.binding button.listening { border-color: var(--accent); color: var(--accent); }
+.binding .pad { font: 12px var(--mono); color: var(--dim); }
+fieldset { margin: 16px 0 0; padding: 12px 14px 14px; border: 1px solid var(--line); border-radius: 4px; }
+fieldset[hidden] { display: none; }
+legend { padding: 0 6px; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+#menu-button { position: fixed; top: 10px; left: 10px; min-width: 64px; min-height: 44px; border: 1px solid var(--line); border-radius: 4px; background: rgba(8, 10, 14, 0.6); font-weight: 600; }
+#menu-button[hidden] { display: none; }
+
+/* a phone (body.compact, set by main.js): the stick and buttons own the bottom of the screen, so the numbers go to the top */
+body.compact #vitals { bottom: auto; top: 62px; left: 12px; gap: 14px; }
+body.compact #arms { bottom: auto; top: 62px; right: 12px; }
+body.compact .stat .label { font-size: 10px; }
+body.compact .stat .value { font-size: 24px; }
+body.compact #weapons li { padding: 2px 6px; width: 1.9em; overflow: hidden; white-space: nowrap; }
+body.compact #top { top: 8px; }
+body.compact #notice { top: 118px; }
+body.compact #feed { top: 122px; font-size: 12px; }
+body.compact #chat-log { bottom: auto; top: 122px; left: 12px; }
+body.compact #debug { top: 160px; }
+body.compact #scores { top: 8%; }
+body.compact .card { padding: 20px 18px; }
+body.compact .card h1 { font-size: 34px; }
+
 /* ------------------------------------------------------------------ name tags and chat */
 #tags { position: absolute; inset: 0; overflow: hidden; }
 .tag-name { position: absolute; left: 0; top: 0; padding: 1px 6px; font-size: 12px; font-weight: 600; white-space: nowrap; border-radius: 3px; background: rgba(8, 10, 14, 0.55); border-bottom: 2px solid currentColor; will-change: transform; }
@@ -127,7 +158,7 @@ select option { background: #14181f; color: var(--ink); }
 #scores .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; }
 #scores .tag { margin-left: 8px; font: 11px var(--mono); color: var(--dim); }
 #scores tr.team td { border-top: 0; padding-top: 14px; font: 700 12px var(--sans); letter-spacing: 0.12em; text-transform: uppercase; }
-#notice { position: absolute; left: 50%; top: 9%; transform: translateX(-50%); padding: 8px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-weight: 600; }
+#notice { position: absolute; left: 50%; top: 66px; transform: translateX(-50%); padding: 8px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-weight: 600; }
 details { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 10px; }
 summary { cursor: pointer; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); min-height: 32px; display: flex; align-items: center; }
 details .hint { margin-top: 6px; }
@@ -137,3 +168,4 @@ details .hint { margin-top: 6px; }
 .room { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; }
 .room strong { font: 700 22px var(--mono); letter-spacing: 0.2em; color: var(--accent); }
 #pause .room button { width: auto; margin: 0 0 0 auto; }
+.room[hidden] { display: none; }
