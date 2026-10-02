@@ -152,7 +152,8 @@ export class Controls {
     /** Is an action held? A finger on the view is for looking, so it doesn't count as the mouse button. */
     held(action) {
         const input = this.input;
-        if (input.pointer.type !== "touch") return input.isDown(action);
+        // "or was pressed": a click shorter than one tick is down and up again before the tick looks
+        if (input.pointer.type !== "touch") return input.isDown(action) || input.wasPressed(action);
         for (const code of this.settings.bindings[action] || []) if (!code.startsWith("Mouse") && input.down.has(code)) return true;
         return false;
     }
