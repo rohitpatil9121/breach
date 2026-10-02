@@ -78,6 +78,8 @@ export class Controls {
         // While the mouse is captured its buttons are read here. The engine's Input takes them from pointer
         // events and asks for pointer capture first, which a browser refuses on an element that holds the
         // pointer lock; the refusal stops that handler before the press is recorded.
+        // (so that handler is kept from running at all while locked: the same refusal would otherwise fill the console)
+        canvas.addEventListener("pointerdown", (e) => { if (input.pointer.locked) e.stopImmediatePropagation(); }, true);
         document.addEventListener("mousedown", (e) => { if (input.pointer.locked) { input.press("Mouse" + e.button); e.preventDefault(); } });
         document.addEventListener("mouseup", (e) => input.release("Mouse" + e.button));
 
