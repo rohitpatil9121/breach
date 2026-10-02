@@ -75,6 +75,12 @@ export class Controls {
             this.turn(-e.movementX * 0.0022, -e.movementY * 0.0022);
         });
 
+        // While the mouse is captured its buttons are read here. The engine's Input takes them from pointer
+        // events and asks for pointer capture first, which a browser refuses on an element that holds the
+        // pointer lock; the refusal stops that handler before the press is recorded.
+        document.addEventListener("mousedown", (e) => { if (input.pointer.locked) { input.press("Mouse" + e.button); e.preventDefault(); } });
+        document.addEventListener("mouseup", (e) => input.release("Mouse" + e.button));
+
         // touch: a stick on the left, buttons on the right, and a drag anywhere else on the right to look
         this.touch = new TouchControls(input, { visible: false });
         this.touch.joystick({ x: "moveX", y: "moveY" });
