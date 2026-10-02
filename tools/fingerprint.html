@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<meta charset="UTF-8">
+<title>BREACH: simulation fingerprint</title>
+<pre id="out">running…</pre>
+<script type="module">
+    // Runs the scripted match from game/selftest.js in this browser. tools/test.mjs compares the result with Node's.
+    import { fingerprint } from "../game/selftest.js";
+    import { MAP_LIST } from "../game/maps/index.js";
+    const result = {};
+    for (const id of MAP_LIST) result[id] = fingerprint(id);
+    document.getElementById("out").textContent = JSON.stringify(result, null, 2);
+    window.__fingerprints = result;
+</script>

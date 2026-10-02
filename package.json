@@ -1,0 +1,11 @@
+{
+  "name": "breach",
+  "private": true,
+  "type": "module",
+  "description": "BREACH: a multiplayer arena shooter built on Projection Lab",
+  "scripts": {
+    "start": "node server/server.mjs",
+    "static": "node tools/serve.mjs",
+    "test": "node tools/test.mjs"
+  }
+}

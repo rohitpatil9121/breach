@@ -1,0 +1,226 @@
+import { ATTRIB, SKIN } from "./config.js";
+
+/**
+ * Mesh: geometry + material, with one vertex array object (VAO) per GL context.
+ * InstancedMesh: draws the same geometry many times in one draw call with per-instance matrix + colour.
+ * SkinnedMesh: a mesh deformed by a skeleton (see engine/Animation.js).
+ * @module engine/Mesh
+ */
+export class Mesh {
+    /**
+     * @param {import("./Geometry.js").Geometry} geometry
+     * @param {import("./Material.js").Material} material
+     */
+    constructor(geometry, material) {
+        this.geometry = geometry;
+        this.material = material;
+        this.isInstanced = false;
+        this.isSkinned = false;
+        /**
+         * Uniform values for this mesh alone, set after the material's. Lets many meshes share one material
+         * (and so one shader program) while differing in, say, a colour palette.
+         * @type {Record<string, any> | null}
+         */
+        this.uniforms = null;
+        this._vaos = new WeakMap();
+    }
+
+    /**
+     * Bind (creating if needed) the VAO for this context. VAOs record which buffers feed which attribute
+     * slots, so after the first frame drawing a mesh is just "bind VAO, draw".
+     * @param {WebGLRenderingContext | WebGL2RenderingContext} gl
+     */
+    bindVAO(gl) {
+        let entry = this._vaos.get(gl);
+        const version = this.geometry.version;
+        if (!entry || entry.version !== version) {
+            if (!entry) entry = { vao: gl.createVertexArray(), version: -1 };
+            gl.bindVertexArray(entry.vao);
+            this.geometry.bind(gl);
+            this.bindExtra(gl);
+            entry.version = version;
+            this._vaos.set(gl, entry);
+        } else {
+            gl.bindVertexArray(entry.vao);
+        }
+        this.beforeDraw(gl);
+    }
+
+    /** Hook for subclasses to add attributes to the VAO. */
+    bindExtra(gl) { void gl; }
+    /** Hook for subclasses to update per-frame GPU data. */
+    beforeDraw(gl) { void gl; }
+
+    dispose(gl) {
+        const e = this._vaos.get(gl);
+        if (e) gl.deleteVertexArray(e.vao);
+        this._vaos.delete(gl);
+    }
+}
+
+export class InstancedMesh extends Mesh {
+    /**
+     * @param {import("./Geometry.js").Geometry} geometry
+     * @param {import("./Material.js").Material} material
+     * @param {number} capacity maximum number of instances (buffers are allocated once)
+     */
+    constructor(geometry, material, capacity) {
+        super(geometry, material);
+        this.isInstanced = true;
+        this.capacity = capacity;
+        /** number of instances to draw (≤ capacity) */
+        this.count = capacity;
+        /** column-major mat4 per instance */
+        this.matrices = new Float32Array(capacity * 16);
+        /** rgba per instance */
+        this.colors = new Float32Array(capacity * 4).fill(1);
+        for (let i = 0; i < capacity; i++) this.matrices[i * 16] = this.matrices[i * 16 + 5] = this.matrices[i * 16 + 10] = this.matrices[i * 16 + 15] = 1;
+        // dirty ranges in instances; only this slice is sent with bufferSubData
+        this._dirtyMin = 0;
+        this._dirtyMax = capacity;
+        this._gpu = new WeakMap();
+    }
+
+    /**
+     * Fast path: translation + uniform/axis scale + rotation around Z (no allocation).
+     * @param {number} i instance index
+     */
+    setTransform(i, x, y, z, sx = 1, sy = sx, sz = sx, yaw = 0) {
+        const m = this.matrices, o = i * 16, c = Math.cos(yaw), s = Math.sin(yaw);
+        m[o] = c * sx; m[o + 1] = s * sx; m[o + 2] = 0; m[o + 3] = 0;
+        m[o + 4] = -s * sy; m[o + 5] = c * sy; m[o + 6] = 0; m[o + 7] = 0;
+        m[o + 8] = 0; m[o + 9] = 0; m[o + 10] = sz; m[o + 11] = 0;
+        m[o + 12] = x; m[o + 13] = y; m[o + 14] = z; m[o + 15] = 1;
+        this.markDirty(i);
+    }
+
+    /** Copy a full mat4 (e.g. from Transform.worldMatrix). */
+    setMatrix(i, mat4) {
+        this.matrices.set(mat4, i * 16);
+        this.markDirty(i);
+    }
+
+    setColor(i, r, g, b, a = 1) {
+        const c = this.colors, o = i * 4;
+        c[o] = r; c[o + 1] = g; c[o + 2] = b; c[o + 3] = a;
+        this.markDirty(i);
+    }
+
+    /** Mark instance i (or the whole range) for upload. */
+    markDirty(i) {
+        if (i === undefined) { this._dirtyMin = 0; this._dirtyMax = this.capacity; return; }
+        if (i < this._dirtyMin) this._dirtyMin = i;
+        if (i + 1 > this._dirtyMax) this._dirtyMax = i + 1;
+    }
+
+    bindExtra(gl) {
+        let g = this._gpu.get(gl);
+        if (!g) {
+            g = { matrix: gl.createBuffer(), color: gl.createBuffer() };
+            this._gpu.set(gl, g);
+            gl.bindBuffer(gl.ARRAY_BUFFER, g.matrix);
+            gl.bufferData(gl.ARRAY_BUFFER, this.matrices.byteLength, gl.DYNAMIC_DRAW);
+            gl.bindBuffer(gl.ARRAY_BUFFER, g.color);
+            gl.bufferData(gl.ARRAY_BUFFER, this.colors.byteLength, gl.DYNAMIC_DRAW);
+            this.markDirty();
+        }
+        // a mat4 attribute uses 4 consecutive vec4 slots; each advances once per instance (divisor 1)
+        gl.bindBuffer(gl.ARRAY_BUFFER, g.matrix);
+        for (let c = 0; c < 4; c++) {
+            const loc = ATTRIB.instanceMatrix + c;
+            gl.enableVertexAttribArray(loc);
+            gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 64, c * 16);
+            gl.vertexAttribDivisor(loc, 1);
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, g.color);
+        gl.enableVertexAttribArray(ATTRIB.instanceColor);
+        gl.vertexAttribPointer(ATTRIB.instanceColor, 4, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribDivisor(ATTRIB.instanceColor, 1);
+    }
+
+    beforeDraw(gl) {
+        if (this._dirtyMax <= this._dirtyMin) return;
+        const g = this._gpu.get(gl), a = this._dirtyMin, b = this._dirtyMax;
+        gl.bindBuffer(gl.ARRAY_BUFFER, g.matrix);
+        gl.bufferSubData(gl.ARRAY_BUFFER, a * 64, this.matrices.subarray(a * 16, b * 16));
+        gl.bindBuffer(gl.ARRAY_BUFFER, g.color);
+        gl.bufferSubData(gl.ARRAY_BUFFER, a * 16, this.colors.subarray(a * 4, b * 4));
+        this._dirtyMin = this.capacity;
+        this._dirtyMax = 0;
+    }
+
+    dispose(gl) {
+        super.dispose(gl);
+        const g = this._gpu.get(gl);
+        if (g) { gl.deleteBuffer(g.matrix); gl.deleteBuffer(g.color); this._gpu.delete(gl); }
+    }
+}
+
+/**
+ * SkinnedMesh: a mesh bent by a skeleton. The geometry needs `joints` and `weights`; the material must be
+ * one with a skinning variant (StandardMaterial). The skeleton's root sits at the entity's origin, so the
+ * entity places and turns the whole character and the Animator moves the limbs.
+ *
+ *   const animator = new Animator(skeleton, clips);
+ *   entity.mesh = new SkinnedMesh(geometry, material, animator);
+ *
+ * Up to SKIN.maxJoints joints, the skinning matrices are a uniform array. A bigger skeleton (most
+ * downloaded character rigs have 50 to 70 bones) sends them as one row of a float texture, four texels per
+ * joint, which the vertex shader reads back; that needs WebGL2 or the OES_texture_float extension.
+ */
+export class SkinnedMesh extends Mesh {
+    /**
+     * @param {import("./Geometry.js").Geometry} geometry
+     * @param {import("./Material.js").Material} material
+     * @param {import("./Animation.js").Animator} animator
+     */
+    constructor(geometry, material, animator) {
+        super(geometry, material);
+        this.isSkinned = true;
+        this.animator = animator;
+        /** true when the skeleton is too big for a uniform array */
+        this.usesJointTexture = animator.skeleton.count > SKIN.maxJoints;
+        this._jointGPU = new WeakMap();
+    }
+
+    /** the skinning matrices the shader reads (16 floats per joint, at least SKIN.maxJoints of them) */
+    get jointMatrices() { return this.animator.matrices; }
+
+    /**
+     * Hand the skinning matrices to a program: as a uniform array, or through the joint texture.
+     * @param {WebGLRenderingContext | WebGL2RenderingContext} gl
+     * @param {import("./gl/ShaderProgram.js").ShaderProgram} program
+     */
+    bindJoints(gl, program) {
+        const animator = this.animator;
+        if (!this.usesJointTexture) { program.set("u_joints", animator.matrices); return; }
+        const count = animator.skeleton.count, width = count * 4;
+        let g = this._jointGPU.get(gl);
+        gl.activeTexture(gl.TEXTURE0 + SKIN.textureUnit);
+        if (!g) {
+            const webgl2 = typeof WebGL2RenderingContext !== "undefined" && gl instanceof WebGL2RenderingContext;
+            g = { texture: gl.createTexture(), version: -1 };
+            this._jointGPU.set(gl, g);
+            if (!webgl2 && !gl.getExtension("OES_texture_float")) console.warn("SkinnedMesh: this skeleton needs float textures, which this device lacks; the mesh will not animate");
+            gl.bindTexture(gl.TEXTURE_2D, g.texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, webgl2 ? gl.RGBA32F : gl.RGBA, width, 1, 0, gl.RGBA, gl.FLOAT, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        } else gl.bindTexture(gl.TEXTURE_2D, g.texture);
+        // the shadow pass and the main pass both come through here; upload once per new pose
+        if (g.version !== animator.version) {
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, 1, gl.RGBA, gl.FLOAT, animator.matrices.subarray(0, count * 16));
+            g.version = animator.version;
+        }
+        program.set("u_jointTexture", SKIN.textureUnit);
+        program.set("u_jointTextureWidth", width);
+    }
+
+    dispose(gl) {
+        super.dispose(gl);
+        const g = this._jointGPU.get(gl);
+        if (g) { gl.deleteTexture(g.texture); this._jointGPU.delete(gl); }
+    }
+}
