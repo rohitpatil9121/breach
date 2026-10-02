@@ -116,3 +116,6 @@ select option { background: #14181f; color: var(--ink); }
 #scores .tag { margin-left: 8px; font: 11px var(--mono); color: var(--dim); }
 #scores tr.team td { border-top: 0; padding-top: 14px; font: 700 12px var(--sans); letter-spacing: 0.12em; text-transform: uppercase; }
 #notice { position: absolute; left: 50%; top: 9%; transform: translateX(-50%); padding: 8px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-weight: 600; }
+.room { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; }
+.room strong { font: 700 22px var(--mono); letter-spacing: 0.2em; color: var(--accent); }
+#pause .room button { width: auto; margin: 0 0 0 auto; }

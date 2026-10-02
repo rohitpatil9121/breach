@@ -15,7 +15,8 @@ import { createBrain, think } from "../game/bots.js";
  *
  * INPUTS. A client sends one input per tick. They queue here and one is applied per tick, so a burst
  * after a network hiccup is played back at the right speed. If the queue runs dry the last input is
- * held; if it grows past a few ticks the oldest are dropped (the client's prediction corrects itself).
+ * held for a moment and then let go; if the queue grows past a few ticks the oldest are dropped (the
+ * client's prediction corrects itself).
  *
  * LAG COMPENSATION. Each input says which server tick its sender was looking at. The room turns that
  * into "how many ticks ago", caps it, and the simulation rewinds the other players by that much when
@@ -26,6 +27,8 @@ import { createBrain, think } from "../game/bots.js";
 const BOT_NAMES = ["Anvil", "Brask", "Cinder", "Dross", "Ember", "Flux", "Gantry", "Hasp", "Ingot", "Kiln", "Latch", "Mantle"];
 /** inputs waiting for one player beyond this are dropped, oldest first */
 const QUEUE_MAX = 8;
+/** ticks a player's last input is held when no new one arrives; after that they stand still */
+const STARVE_TICKS = 12;
 /** messages a client may send per second, and the burst allowed on top */
 const RATE = 150, BURST = 250;
 
@@ -158,7 +161,10 @@ export class Room {
         for (const c of this.clients.values()) {
             if (c.tokens < BURST) c.tokens = Math.min(BURST, c.tokens + RATE / TICK_RATE);
             while (c.queue.length > QUEUE_MAX) c.queue.shift();
-            const fresh = c.queue.shift(), input = fresh || c.last;
+            const fresh = c.queue.shift();
+            // nothing new for a fifth of a second (a hidden tab, a stalled link): let go of the controls
+            c.starved = fresh ? 0 : (c.starved || 0) + 1;
+            const input = fresh || (c.starved < STARVE_TICKS ? c.last : null);
             if (!input) { this.inputs.delete(c.id); continue; }
             // how far behind the present was this player looking? (they report the server tick they were drawing)
             if (fresh) input.lag = Math.max(0, Math.min(MAX_REWIND, state.tick + 1 - input.vt));

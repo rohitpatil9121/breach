@@ -1,12 +1,12 @@
 import { Game, Camera, PostFX } from "../engine/index.js";
 import { BTN, WEAPONS, MODES, MATCH } from "./data.js";
 import { eyeHeight, quantizeYaw, quantizePitch, aimBasis } from "./sim.js";
-import { Client, Loopback } from "./net.js";
+import { Client, Loopback, SocketTransport } from "./net.js";
 import { getMap, MAP_LIST } from "./maps/index.js";
 import { World } from "./world.js";
 import { Hud } from "./hud.js";
 import { fingerprint } from "./selftest.js";
-import { cleanText, NAME_MAX } from "./protocol.js";
+import { cleanText, NAME_MAX, PROTOCOL } from "./protocol.js";
 import { Room } from "../server/room.mjs";
 
 /**
@@ -76,6 +76,50 @@ function startPractice() {
     canvas.focus();
 }
 
+// ------------------------------------------------------------------ online
+/**
+ * Where the server is. By default the page's own origin (the server serves the game too); a page hosted
+ * elsewhere, such as GitHub Pages, names one with ?server=wss://host.
+ */
+function serverUrl() {
+    const named = new URLSearchParams(location.search).get("server");
+    if (named) return named.endsWith("/ws") ? named : named.replace(/[/]$/, "") + "/ws";
+    if (!location.host) return "";
+    return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+}
+const online = { url: serverUrl(), up: false, last: null };
+
+/** Ask the server whether it is there. Until it answers, only Practice is offered. */
+async function probe() {
+    const status = $("server-status"), buttons = [$("quick"), $("create"), $("join")];
+    let info = null;
+    try {
+        if (!online.url) throw new Error("no server");
+        const reply = await fetch(online.url.replace(/^ws/, "http").replace(/[/]ws$/, "/status"), { cache: "no-store" });
+        info = await reply.json();
+        if (info.game !== "breach") throw new Error("not a BREACH server");
+    } catch { info = null; }
+    online.up = !!info;
+    for (const b of buttons) b.disabled = !online.up;
+    if (!info) status.textContent = "No server reachable. Practice works without one.";
+    else if (info.protocol !== PROTOCOL) { status.textContent = "The server is a different version from this page. Reload."; for (const b of buttons) b.disabled = true; }
+    else status.textContent = `Server is up: ${info.players} playing in ${info.rooms} ${info.rooms === 1 ? "room" : "rooms"}.`;
+}
+
+/** @param {{ room?: string, create?: object }} hello which room: a code, a new one, or (neither) any open one */
+function playOnline(hello) {
+    leave();
+    online.last = hello;
+    const link = new SocketTransport(online.url);
+    client.attach(link);
+    link.onopen = () => client.send({ t: "hello", v: PROTOCOL, name: playerName(), ...hello });
+    link.connect();
+    show("play");
+    hud.notice("Connecting…", 20);
+    lockMouse();
+    canvas.focus();
+}
+
 function leave() {
     client.detach();
     room = null;
@@ -100,11 +144,29 @@ function playerName() { return cleanText($("name").value, NAME_MAX) || "Player";
     for (const id of ["p-map", "p-mode", "p-bots", "p-skill", "name"]) $(id).addEventListener("change", read);
     $("p-map").addEventListener("change", () => world.loadMap(getMap($("p-map").value)));
     $("practice").addEventListener("click", () => { read(); startPractice(); });
-    $("join-form").addEventListener("submit", (e) => e.preventDefault());
-    $("server-status").textContent = "No server here. Practice works without one.";
+    $("quick").addEventListener("click", () => { read(); playOnline({}); });
+    $("create").addEventListener("click", () => { read(); const p = save.practice; playOnline({ create: { map: p.map, mode: p.mode, bots: p.bots + 1, skill: p.skill, open: true } }); });
+    const code = $("code");
+    code.addEventListener("input", () => { code.value = code.value.toUpperCase().replace(/[^A-Z]/g, ""); });
+    $("join-form").addEventListener("submit", (e) => { e.preventDefault(); read(); if (code.value.length === 4 && online.up) playOnline({ room: code.value }); else code.focus(); });
+    // an invite link carries the room in its hash: breach/#ABCD
+    const invited = location.hash.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 4);
+    if (invited.length === 4) code.value = invited;
+    probe();
 }
 $("resume").addEventListener("click", () => { show("play"); lockMouse(); canvas.focus(); });
-$("leave").addEventListener("click", () => { leave(); world.loadMap(getMap(save.practice.map)); show("title"); });
+$("leave").addEventListener("click", () => { toTitle(); probe(); });
+$("invite").addEventListener("click", async () => {
+    const link = location.origin + location.pathname + location.search + "#" + client.room.code;
+    try { await navigator.clipboard.writeText(link); $("invite").textContent = "Link copied"; } catch { prompt("Invite link", link); }
+});
+function toTitle(message) {
+    leave();
+    history.replaceState(null, "", location.pathname + location.search);
+    world.loadMap(getMap(save.practice.map));
+    show("title");
+    if (message) $("server-status").textContent = message;
+}
 canvas.addEventListener("click", () => { if (screen === "play" && !input.pointer.locked) lockMouse(); });
 const coarse = matchMedia("(pointer: coarse)").matches;
 // Escape releases the mouse (the browser does that itself); the pause menu follows
@@ -112,9 +174,23 @@ document.addEventListener("pointerlockchange", () => { if (!document.pointerLock
 addEventListener("keydown", (e) => { if (e.code === "F3") { e.preventDefault(); $("debug").hidden = !$("debug").hidden; } });
 
 // ------------------------------------------------------------------ what the match tells us
-client.on("welcome", () => world.loadMap(client.map));
+client.on("welcome", () => {
+    world.loadMap(client.map);
+    const practice = client.room.code === "PRACTICE";
+    if (!practice) { history.replaceState(null, "", location.pathname + location.search + "#" + client.room.code); $("code").value = client.room.code; }
+    hud.notice(practice ? "Practice" : `Room ${client.room.code}`, 3);
+    $("room-line").hidden = practice;
+    $("room-code").textContent = client.room.code;
+    $("invite").textContent = "Copy invite link";
+});
 client.on("start", () => { world.loadMap(client.map); hud.notice("New round"); });
-client.on("close", (reason) => { leave(); world.loadMap(getMap(save.practice.map)); show("title"); $("server-status").textContent = reason || "Disconnected."; });
+client.on("close", (reason) => {
+    // keep the room's code in the box, so one press of Join tries again
+    const was = client.room && client.room.code !== "PRACTICE" ? client.room.code : online.last && online.last.room;
+    toTitle();
+    if (was) $("code").value = was;
+    probe().then(() => { $("server-status").textContent = (reason || "Disconnected.") + (was && online.up ? ` Press Join to go back to room ${was}.` : ""); if (was && online.up) $("join").focus(); });
+});
 let lastMuzzle = [0, 0, 0];
 client.on("shot", (me) => {
     // my own shot, drawn the moment the trigger breaks; the server decides what it hit
@@ -231,4 +307,4 @@ show("title");
 game.start();
 
 /** console hook, for poking at the game and for the tools */
-window.breach = { game, world, client, hud, view, input, save, fingerprint, startPractice, get room() { return room; }, get screen() { return screen; } };
+window.breach = { game, world, client, hud, view, input, save, fingerprint, startPractice, playOnline, online, get room() { return room; }, get screen() { return screen; } };

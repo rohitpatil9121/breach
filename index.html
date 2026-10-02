@@ -55,7 +55,7 @@
 
             <section aria-labelledby="h-practice">
                 <h2 id="h-practice">Practice</h2>
-                <p class="hint">Offline, against bots. Runs in this page, with no server.</p>
+                <p class="hint">Offline, against bots. Runs in this page, with no server. A room you create online starts with these settings too.</p>
                 <div class="row">
                     <label class="field" for="p-map">Map <select id="p-map"></select></label>
                     <label class="field" for="p-mode">Mode <select id="p-mode"></select></label>
@@ -85,6 +85,7 @@
         <div class="card">
             <h1 class="small">Paused</h1>
             <p class="lede" id="pause-note">The match carries on behind this menu.</p>
+            <p id="room-line" class="room" hidden>Room <strong id="room-code"></strong> <button id="invite">Copy invite link</button></p>
             <button id="resume" class="primary">Back to the match</button>
             <button id="leave">Leave the match</button>
             <dl class="keys">
