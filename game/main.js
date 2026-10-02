@@ -1,7 +1,7 @@
 import { Game, Camera, PostFX } from "../engine/index.js";
 import { BTN, WEAPONS, MODES, MATCH } from "./data.js";
 import { eyeHeight, quantizeYaw, quantizePitch, aimBasis } from "./sim.js";
-import { Client, Loopback, SocketTransport } from "./net.js";
+import { Client, Loopback, SocketTransport, Conditions } from "./net.js";
 import { getMap, MAP_LIST } from "./maps/index.js";
 import { World } from "./world.js";
 import { Hud } from "./hud.js";
@@ -61,6 +61,9 @@ function lockMouse() {
     try { const asked = canvas.requestPointerLock(); if (asked && asked.catch) asked.catch(() => {}); } catch { /* not available */ }
 }
 
+/** latency, jitter and loss added to the link on purpose, from the pause menu, to see how the netcode holds up */
+const conditions = { latency: 0, jitter: 0, loss: 0 };
+
 /** @type {Room | null} the room this page runs itself (Practice); null when playing on a server */
 let room = null;
 
@@ -68,7 +71,8 @@ function startPractice() {
     leave();
     const p = save.practice;
     room = new Room({ code: "PRACTICE", map: p.map, mode: p.mode, bots: p.bots + 1, skill: p.skill, seed: (Date.now() & 0xffff) + 1 });
-    const link = new Loopback(room);
+    const link = new Conditions(new Loopback(room), conditions);
+    link.settings = conditions;
     client.attach(link);
     link.connect(playerName());
     show("play");
@@ -110,7 +114,8 @@ async function probe() {
 function playOnline(hello) {
     leave();
     online.last = hello;
-    const link = new SocketTransport(online.url);
+    const link = new Conditions(new SocketTransport(online.url), conditions);
+    link.settings = conditions;
     client.attach(link);
     link.onopen = () => client.send({ t: "hello", v: PROTOCOL, name: playerName(), ...hello });
     link.connect();
@@ -155,6 +160,12 @@ function playerName() { return cleanText($("name").value, NAME_MAX) || "Player";
     probe();
 }
 $("resume").addEventListener("click", () => { show("play"); lockMouse(); canvas.focus(); });
+for (const [id, key, unit, scale] of [["net-latency", "latency", " ms", 1], ["net-jitter", "jitter", " ms", 1], ["net-loss", "loss", " %", 0.01]]) {
+    const slider = $(id), out = $(id + "-out");
+    const apply = () => { conditions[key] = +slider.value * scale; out.textContent = slider.value + unit; };
+    slider.addEventListener("input", apply);
+    apply();
+}
 $("leave").addEventListener("click", () => { toTitle(); probe(); });
 $("invite").addEventListener("click", async () => {
     const link = location.origin + location.pathname + location.search + "#" + client.room.code;
@@ -307,4 +318,4 @@ show("title");
 game.start();
 
 /** console hook, for poking at the game and for the tools */
-window.breach = { game, world, client, hud, view, input, save, fingerprint, startPractice, playOnline, online, get room() { return room; }, get screen() { return screen; } };
+window.breach = { game, world, client, hud, view, input, save, fingerprint, startPractice, playOnline, online, conditions, get room() { return room; }, get screen() { return screen; } };

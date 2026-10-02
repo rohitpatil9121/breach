@@ -522,13 +522,17 @@ const falloff = (w, d) => {
     return 1 + ((f[2] - 1) * (d - f[0])) / (f[1] - f[0]);
 };
 
-/** A weapon that fires rays: every pellet against the map and every other player, as the shooter saw them. */
-function fireRays(state, map, p, w, lag) {
-    const b = aimBasis(p), fx = b.fx, fy = b.fy, fz = b.fz, rx = b.rx, ry = b.ry, ux = b.ux, uy = b.uy, uz = b.uz;
-    const ox = p.x, oy = p.y, oz = p.z + eyeHeight(p);
+/**
+ * A weapon that fires rays: every pellet against the map and every other player, as the shooter saw them.
+ * @param {{ p: object, w: number, ox: number, oy: number, oz: number, yaw: number, pitch: number, spread: number, lag: number }} shot
+ */
+function fireRays(state, map, shot) {
+    const p = shot.p, w = WEAPONS[shot.w], lag = shot.lag;
+    const b = aimBasis(shot), fx = b.fx, fy = b.fy, fz = b.fz, rx = b.rx, ry = b.ry, ux = b.ux, uy = b.uy, uz = b.uz;
+    const ox = shot.ox, oy = shot.oy, oz = shot.oz;
     const ends = [], hits = [];
     for (let n = 0; n < w.pellets; n++) {
-        const angle = random(state) * TAU, m = Math.sqrt(random(state)) * p.shotSpread, ca = dcos(angle) * m, sa = dsin(angle) * m;
+        const angle = random(state) * TAU, m = Math.sqrt(random(state)) * shot.spread, ca = dcos(angle) * m, sa = dsin(angle) * m;
         let dx = fx + rx * ca + ux * sa, dy = fy + ry * ca + uy * sa, dz = fz + uz * sa;
         const l = Math.sqrt(dx * dx + dy * dy + dz * dz);
         dx /= l; dy /= l; dz /= l;
@@ -545,17 +549,17 @@ function fireRays(state, map, p, w, lag) {
             if (h) { h.amount += amount; h.head = h.head || (head && w.head > 1); } else hits.push({ who, amount, head: head && w.head > 1 });
         }
     }
-    state.events.push({ type: "shot", id: p.id, w: p.weapon, o: [ox, oy, oz], ends });
-    for (const h of hits) damage(state, h.who, h.amount, p, p.weapon, h.head);
+    state.events.push({ type: "shot", id: p.id, w: shot.w, o: [ox, oy, oz], ends });
+    for (const h of hits) damage(state, h.who, h.amount, p, shot.w, h.head);
 }
 
 /** The launcher: a rocket leaves from just in front of the eye. */
-function fireRocket(state, map, p, w) {
-    const b = aimBasis(p), ox = p.x, oy = p.y, oz = p.z + eyeHeight(p);
+function fireRocket(state, map, shot) {
+    const p = shot.p, w = WEAPONS[shot.w], b = aimBasis(shot), ox = shot.ox, oy = shot.oy, oz = shot.oz;
     // start a little ahead, unless a wall is closer than that
     const start = Math.min(0.6, rayMap(map, ox, oy, oz, b.fx, b.fy, b.fz, 0.6) - 0.05);
     const s = w.projectile.speed;
-    const rocket = { id: state.nextProjectile++, owner: p.id, w: p.weapon, x: ox + b.fx * start, y: oy + b.fy * start, z: oz + b.fz * start - 0.12,
+    const rocket = { id: state.nextProjectile++, owner: p.id, w: shot.w, x: ox + b.fx * start, y: oy + b.fy * start, z: oz + b.fz * start - 0.12,
         vx: b.fx * s, vy: b.fy * s, vz: b.fz * s, life: w.projectile.life };
     if (state.nextProjectile > 60000) state.nextProjectile = 1;
     state.projectiles.push(rocket);
@@ -648,36 +652,54 @@ function stepPickups(state, map) {
 
 // ------------------------------------------------------------------ the tick
 
+/** Apply one input to one player, and note the shot if the trigger broke. */
+function applyInput(state, map, p, input) {
+    stepPlayer(map, p, input);
+    if (!p.alive) return;
+    if (p.pad) state.events.push({ type: "pad", id: p.id });
+    if (p.fired) {
+        // what the shot hits is worked out once everyone has moved; here, just where it left from
+        shots.push({ p, w: p.weapon, ox: p.x, oy: p.y, oz: p.z + eyeHeight(p), yaw: p.yaw, pitch: p.pitch, spread: p.shotSpread, lag: input.lag || 0 });
+        p.protect = 0;
+    }
+    if (p.z < MOVE.killZ) kill(state, p, null, -1, false);
+}
+const shots = [];
+
 /**
  * Advance the whole match by one tick.
+ *
+ * Each player's entry in `inputs` is one input, or a list of them. A list is how a player whose inputs
+ * arrived late catches up: all of them are applied this tick, in order, so the server walks exactly the
+ * path the client predicted. An empty list means "nothing arrived": that player's own time stands still
+ * this tick (the next inputs will carry on from here). No entry at all means nobody is driving, and the
+ * player stands idle under gravity.
  * @param {ReturnType<typeof createState>} state
  * @param {object} map
- * @param {Map<number, PlayerInput>} inputs latest input per player id
+ * @param {Map<number, PlayerInput | PlayerInput[]>} inputs
  */
 export function step(state, map, inputs) {
     state.events.length = 0;
     state.tick++;
     if (state.phase === "over") { if (state.overTicks > 0) state.overTicks--; return; }
 
+    shots.length = 0;
     for (const p of state.players) {
-        const input = inputs.get(p.id);
-        if (input) stepPlayer(map, p, input);
-        else { idle.seq = p.seq; idle.yaw = p.yaw; idle.pitch = p.pitch; stepPlayer(map, p, idle); }
+        const given = inputs.get(p.id);
+        if (Array.isArray(given)) for (let i = 0; i < given.length; i++) applyInput(state, map, p, given[i]);
+        else if (given) applyInput(state, map, p, given);
+        else { idle.seq = p.seq; idle.yaw = p.yaw; idle.pitch = p.pitch; applyInput(state, map, p, idle); }
         if (!p.alive) continue;
-        if (p.pad) state.events.push({ type: "pad", id: p.id });
-        if (p.protect > 0) p.protect = p.fired ? 0 : p.protect - 1;
+        if (p.protect > 0) p.protect--;
         if (p.overcharge > 0) p.overcharge--;
-        if (p.z < MOVE.killZ) kill(state, p, null, -1, false);
     }
     // remember where everyone is, for shots that arrive late
     const slot = (state.tick & (HISTORY - 1)) * 4;
     for (const p of state.players) { p.hist[slot] = p.x; p.hist[slot + 1] = p.y; p.hist[slot + 2] = p.z; p.hist[slot + 3] = p.crouched ? 1 : 0; }
 
-    for (const p of state.players) {
-        if (!p.fired || !p.alive) continue;
-        const w = WEAPONS[p.weapon], input = inputs.get(p.id);
-        if (w.projectile) fireRocket(state, map, p, w);
-        else fireRays(state, map, p, w, input ? input.lag || 0 : 0);
+    for (const shot of shots) {
+        if (!shot.p.alive) continue;
+        if (WEAPONS[shot.w].projectile) fireRocket(state, map, shot); else fireRays(state, map, shot);
     }
     stepProjectiles(state, map);
     stepPickups(state, map);

@@ -13,10 +13,11 @@ import { createBrain, think } from "../game/bots.js";
  * with. The Node server (server.mjs) drives it from WebSockets; Practice mode drives the very same class
  * inside the page (game/net.js, Loopback), so there is one code path for online and offline play.
  *
- * INPUTS. A client sends one input per tick. They queue here and one is applied per tick, so a burst
- * after a network hiccup is played back at the right speed. If the queue runs dry the last input is
- * held for a moment and then let go; if the queue grows past a few ticks the oldest are dropped (the
- * client's prediction corrects itself).
+ * INPUTS. A client sends one input per tick, and each tick the room applies every input that has arrived
+ * for a player, in order. Usually that is one. After a network hiccup it is none, and then several: the
+ * player's own time stands still while nothing arrives and catches up when it does, so the server walks
+ * exactly the path the client predicted and nothing has to be corrected. A player can't use this to run
+ * fast: inputs are paid for with credit that is earned at one per tick and capped at half a second.
  *
  * LAG COMPENSATION. Each input says which server tick its sender was looking at. The room turns that
  * into "how many ticks ago", caps it, and the simulation rewinds the other players by that much when
@@ -25,17 +26,18 @@ import { createBrain, think } from "../game/bots.js";
  */
 
 const BOT_NAMES = ["Anvil", "Brask", "Cinder", "Dross", "Ember", "Flux", "Gantry", "Hasp", "Ingot", "Kiln", "Latch", "Mantle"];
-/** inputs waiting for one player beyond this are dropped, oldest first */
-const QUEUE_MAX = 8;
-/** ticks a player's last input is held when no new one arrives; after that they stand still */
-const STARVE_TICKS = 12;
+/** inputs waiting for one player beyond this are dropped, oldest first: a second of backlog is a lost cause */
+const QUEUE_MAX = 60;
+/** the most inputs a player can have banked for catching up, and the most applied in one tick */
+const CREDIT_MAX = 30, PER_TICK = 10;
+const NOTHING = Object.freeze([]);
 /** messages a client may send per second, and the burst allowed on top */
 const RATE = 150, BURST = 250;
 
 export class Room {
     /**
      * @param {{ code?: string, map?: string, mode?: string, bots?: number, skill?: number, open?: boolean,
-     *           seed?: number, length?: number, scoreLimit?: number, log?: (line: string) => void }} [options]
+     *           seed?: number, length?: number, scoreLimit?: number, rewind?: boolean, log?: (line: string) => void }} [options]
      *        bots: fill the room with bots up to this many players in all. open: listed for quick play.
      */
     constructor(options = {}) {
@@ -48,6 +50,8 @@ export class Room {
             open: options.open ?? true,
         };
         this.options = { length: options.length, scoreLimit: options.scoreLimit };
+        /** lag compensation; only the tests turn it off, to show what it is for */
+        this.rewind = options.rewind ?? true;
         this.seed = (options.seed ?? 1) >>> 0;
         this.log = options.log || (() => {});
         /** @type {Map<number, object>} people, by player id */
@@ -77,7 +81,7 @@ export class Room {
      */
     join(send, name) {
         const id = this.freeId();
-        const client = { id, send, name: cleanText(name, NAME_MAX) || "Player", queue: [], last: null, ping: 0, pingSent: 0, pingN: 0, tokens: BURST, chatAt: -1000 };
+        const client = { id, send, name: cleanText(name, NAME_MAX) || "Player", queue: [], lastSeq: 0, credit: CREDIT_MAX, ping: 0, pingSent: 0, pingN: 0, tokens: BURST, chatAt: -1000 };
         this.clients.set(id, client);
         if (!this.host) this.host = id;
         addPlayer(this.state, this.map, id, client.name, { team: this.smallerTeam() });
@@ -147,7 +151,7 @@ export class Room {
             if (!this.clients.has(p.id)) continue;
             addPlayer(this.state, this.map, p.id, p.name, { team: this.smallerTeam() });
             const c = this.clients.get(p.id);
-            c.queue.length = 0; c.last = null;
+            c.queue.length = 0; c.lastSeq = 0;
         }
         this.fillBots();
         this.broadcast({ t: "start", room: this.info(), tick: this.state.tick });
@@ -161,15 +165,14 @@ export class Room {
         for (const c of this.clients.values()) {
             if (c.tokens < BURST) c.tokens = Math.min(BURST, c.tokens + RATE / TICK_RATE);
             while (c.queue.length > QUEUE_MAX) c.queue.shift();
-            const fresh = c.queue.shift();
-            // nothing new for a fifth of a second (a hidden tab, a stalled link): let go of the controls
-            c.starved = fresh ? 0 : (c.starved || 0) + 1;
-            const input = fresh || (c.starved < STARVE_TICKS ? c.last : null);
-            if (!input) { this.inputs.delete(c.id); continue; }
+            if (c.credit < CREDIT_MAX) c.credit++;
+            const n = Math.min(c.queue.length, c.credit, PER_TICK);
+            if (!n) { this.inputs.set(c.id, NOTHING); continue; }
+            c.credit -= n;
+            const batch = c.queue.splice(0, n);
             // how far behind the present was this player looking? (they report the server tick they were drawing)
-            if (fresh) input.lag = Math.max(0, Math.min(MAX_REWIND, state.tick + 1 - input.vt));
-            c.last = input;
-            this.inputs.set(c.id, input);
+            for (const input of batch) input.lag = this.rewind ? Math.max(0, Math.min(MAX_REWIND, state.tick + 1 - input.vt)) : 0;
+            this.inputs.set(c.id, batch);
         }
         for (const [id, brain] of this.brains) {
             const bot = findPlayer(state, id);
@@ -217,8 +220,7 @@ export class Room {
         if (m.t === "in") {
             const input = cleanInput(m);
             // inputs are numbered; one that isn't newer than the last is a replay or a duplicate
-            const newest = c.queue.length ? c.queue[c.queue.length - 1].seq : c.last ? c.last.seq : 0;
-            if (input && input.seq > newest) c.queue.push(input);
+            if (input && input.seq > c.lastSeq) { c.lastSeq = input.seq; c.queue.push(input); }
         } else if (m.t === "pong") {
             if (m.n === c.pingN) c.ping = Math.min(999, Math.round(((this.age - c.pingSent) * 1000) / TICK_RATE));
         } else if (m.t === "chat") {

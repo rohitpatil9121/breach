@@ -64,7 +64,8 @@ export class SocketTransport {
 /**
  * Bad network on demand: wraps a transport and holds every message, each way, for `latency / 2` plus up
  * to `jitter` milliseconds. A "lost" message isn't dropped (the real transport is TCP, which resends)
- * but arrives late by a retransmission delay, and everything behind it waits, as it would.
+ * but arrives one more round trip late, as a fast retransmission would bring it, and everything behind
+ * it waits, as it would.
  * Call pump() every frame to release what is due.
  */
 export class Conditions {
@@ -87,7 +88,7 @@ export class Conditions {
     hold(queue, data, last) {
         const s = this.settings;
         let due = this.now() + s.latency / 2 + this.random() * s.jitter;
-        if (s.loss > 0 && this.random() < s.loss) due += 200 + s.latency;      // a retransmission
+        if (s.loss > 0 && this.random() < s.loss) due += 20 + s.latency;       // a retransmission
         if (due < this[last]) due = this[last];                                 // TCP keeps the order
         this[last] = due;
         queue.push({ due, data });
@@ -269,8 +270,8 @@ export class Client {
         this.offset.x *= k; this.offset.y *= k; this.offset.z *= k;
         // the moment being drawn follows the newest snapshot at a fixed distance, speeding up or slowing a little to stay there
         const target = this.serverTick - INTERP_TICKS, gap = target - this.renderTick;
-        if (Math.abs(gap) > 20) this.renderTick = target;
-        else this.renderTick += dt * 60 * (1 + Math.max(-0.2, Math.min(0.2, (gap - SNAP_EVERY * 0.5) * 0.1)));
+        if (Math.abs(gap) > 60) this.renderTick = target;
+        else this.renderTick += dt * 60 * (1 + Math.max(-0.25, Math.min(0.75, (gap - SNAP_EVERY * 0.5) * 0.1)));
         if (this.renderTick > this.serverTick) this.renderTick = this.serverTick;
 
         const c = this._count;

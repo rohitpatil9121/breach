@@ -88,6 +88,13 @@
             <p id="room-line" class="room" hidden>Room <strong id="room-code"></strong> <button id="invite">Copy invite link</button></p>
             <button id="resume" class="primary">Back to the match</button>
             <button id="leave">Leave the match</button>
+            <details id="net-test">
+                <summary>Network test</summary>
+                <p class="hint">Makes your own connection worse on purpose, to see how the game copes. F3 shows the numbers.</p>
+                <label class="slider" for="net-latency">Added ping <output id="net-latency-out"></output><input id="net-latency" type="range" min="0" max="400" step="10" value="0"></label>
+                <label class="slider" for="net-jitter">Jitter <output id="net-jitter-out"></output><input id="net-jitter" type="range" min="0" max="100" step="5" value="0"></label>
+                <label class="slider" for="net-loss">Packet loss <output id="net-loss-out"></output><input id="net-loss" type="range" min="0" max="20" step="1" value="0"></label>
+            </details>
             <dl class="keys">
                 <dt>W A S D</dt><dd>move</dd>
                 <dt>Mouse</dt><dd>look, fire, right button to zoom</dd>
