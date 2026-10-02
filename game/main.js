@@ -1,10 +1,12 @@
 import { Game, Camera, PostFX } from "../engine/index.js";
-import { BTN, WEAPONS, MODES, MATCH } from "./data.js";
-import { eyeHeight, quantizeYaw, quantizePitch, aimBasis } from "./sim.js";
+import { BTN, WEAPONS, MODES, MATCH, PICKUPS, colorOf } from "./data.js";
+import { eyeHeight, quantizeYaw, quantizePitch } from "./sim.js";
 import { Client, Loopback, SocketTransport, Conditions } from "./net.js";
 import { getMap, MAP_LIST } from "./maps/index.js";
 import { World } from "./world.js";
 import { Hud } from "./hud.js";
+import { Sound, WEAPON_SOUND } from "./sound.js";
+import { loadCharacters } from "./characters.js";
 import { fingerprint } from "./selftest.js";
 import { cleanText, NAME_MAX, PROTOCOL } from "./protocol.js";
 import { Room } from "../server/room.mjs";
@@ -39,6 +41,10 @@ renderer.postfx = new PostFX(renderer, { bloom: { threshold: 1.1, intensity: 0.5
 const world = new World(game);
 const client = new Client();
 const hud = new Hud(client);
+const sound = new Sound();
+// browsers allow sound only after a click or a key press
+for (const type of ["pointerdown", "keydown"]) addEventListener(type, () => sound.start(), { once: true });
+world.onStep = (x, y, z) => sound.at("step", x, y, z, 0.9);
 
 // ------------------------------------------------------------------ screens
 /** "title": the menu over a slow fly-round. "play": in a match. "pause": in a match with the menu up. */
@@ -126,6 +132,7 @@ function playOnline(hello) {
 }
 
 function leave() {
+    sound.quiet();
     client.detach();
     room = null;
     if (document.pointerLockElement) input.unlockPointer();
@@ -187,6 +194,7 @@ addEventListener("keydown", (e) => { if (e.code === "F3") { e.preventDefault(); 
 // ------------------------------------------------------------------ what the match tells us
 client.on("welcome", () => {
     world.loadMap(client.map);
+    sound.ambience(client.map.env.indoor);
     const practice = client.room.code === "PRACTICE";
     if (!practice) { history.replaceState(null, "", location.pathname + location.search + "#" + client.room.code); $("code").value = client.room.code; }
     hud.notice(practice ? "Practice" : `Room ${client.room.code}`, 3);
@@ -194,8 +202,8 @@ client.on("welcome", () => {
     $("room-code").textContent = client.room.code;
     $("invite").textContent = "Copy invite link";
 });
-client.on("start", () => { world.loadMap(client.map); hud.notice("New round"); });
-client.on("chat", (m) => hud.chat(m));
+client.on("start", () => { world.loadMap(client.map); sound.ambience(client.map.env.indoor); hud.notice("New round"); });
+client.on("chat", (m) => { hud.chat(m); sound.play("chat", 0.6); });
 
 // chat: Enter opens the box, Enter sends, Escape or an empty line closes it
 const chatForm = $("chat-form"), chatInput = $("chat-input");
@@ -223,23 +231,57 @@ client.on("close", (reason) => {
     if (was) $("code").value = was;
     probe().then(() => { $("server-status").textContent = (reason || "Disconnected.") + (was && online.up ? ` Press Join to go back to room ${was}.` : ""); if (was && online.up) $("join").focus(); });
 });
-let lastMuzzle = [0, 0, 0];
 client.on("shot", (me) => {
-    // my own shot, drawn the moment the trigger breaks; the server decides what it hit
-    const b = aimBasis(me), eye = [me.x, me.y, me.z + eyeHeight(me)], w = WEAPONS[me.weapon];
-    lastMuzzle = [eye[0] + b.fx * 0.5 + b.rx * 0.16 - b.ux * 0.12, eye[1] + b.fy * 0.5 + b.ry * 0.16 - b.uy * 0.12, eye[2] + b.fz * 0.5 - b.uz * 0.12];
-    world.flash(lastMuzzle[0], lastMuzzle[1], lastMuzzle[2], [1.6, 1.2, 0.7], 5, 0.06);
+    // my own shot, shown and heard the moment the trigger breaks; the server decides what it hit
+    const w = WEAPONS[me.weapon];
+    world.fireView(me.weapon);
+    sound.play(WEAPON_SOUND[me.weapon], 0.8, 0.97 + Math.random() * 0.06);
     view.kick = Math.min(0.06, view.kick + (w.projectile ? 0.03 : 0.006 + w.damage * w.pellets * 0.00025));
 });
+const spot = [0, 0, 0];
+/** Where a player is right now, as far as this client knows (for placing a sound or an effect). */
+function whereIs(id, out) {
+    if (id === client.id) { out[0] = client.me.x; out[1] = client.me.y; out[2] = client.me.z; return true; }
+    const snap = client.snaps[client.snaps.length - 1], row = snap && snap.players.get(id);
+    if (!row) return false;
+    out[0] = row[1]; out[1] = row[2]; out[2] = row[3];
+    return true;
+}
 client.on("event", (e) => {
     const me = client.id;
-    if (e.type === "shot") world.shot(e.id === me ? lastMuzzle : [e.o[0], e.o[1], e.o[2] - 0.15], e.ends, e.w);
-    else if (e.type === "explode") { world.explosion(e.x, e.y, e.z); const d = Math.hypot(e.x - client.me.x, e.y - client.me.y, e.z - client.me.z); if (d < 12) game.juice.shake(0.7 * (1 - d / 12)); }
-    else if (e.type === "hurt") {
-        if (e.by === me && e.id !== me) hud.hitMarker(false);
-        if (e.id === me) { hud.hurtFlash(e.amount); game.juice.shake(Math.min(0.5, e.amount / 120)); }
-    } else if (e.type === "kill") { hud.kill(e); if (e.by === me && e.id !== me) hud.hitMarker(true); }
-    else if (e.type === "spawn" && e.id === me) { view.yaw = (e.yaw * Math.PI * 2) / 65536; view.pitch = 0; view.kick = 0; }
+    if (e.type === "shot") {
+        if (e.id === me) world.shot(world.muzzle, e.ends, e.w);
+        else {
+            const from = world.muzzleOf(client, e.id, spot) || [e.o[0], e.o[1], e.o[2] - 0.15];
+            world.muzzleFlash(from, [e.ends[0] - e.o[0], e.ends[1] - e.o[1], e.ends[2] - e.o[2]].map((v, i, a) => v / (Math.hypot(a[0], a[1], a[2]) || 1)), e.w);
+            world.shot(from, e.ends, e.w);
+            sound.at(WEAPON_SOUND[e.w], e.o[0], e.o[1], e.o[2]);
+        }
+    } else if (e.type === "launch") { if (e.id !== me && whereIs(e.id, spot)) sound.at("launcher", spot[0], spot[1], spot[2] + 1.4); }
+    else if (e.type === "explode") {
+        world.explosion(e.x, e.y, e.z);
+        sound.at("explode", e.x, e.y, e.z);
+        const d = Math.hypot(e.x - client.me.x, e.y - client.me.y, e.z - client.me.z);
+        if (d < 12) game.juice.shake(0.7 * (1 - d / 12));
+    } else if (e.type === "hurt") {
+        if (e.by === me && e.id !== me) { hud.hitMarker(false); sound.play("hit", 0.9, e.head ? 1.5 : 1); }
+        if (e.id === me) { hud.hurtFlash(e.amount); sound.play("hurt", 0.9); game.juice.shake(Math.min(0.5, e.amount / 120)); }
+    } else if (e.type === "kill") {
+        hud.kill(e);
+        if (e.by === me && e.id !== me) { hud.hitMarker(true); sound.play("kill"); }
+        if (e.id === me) sound.play("death");
+        else if (whereIs(e.id, spot)) sound.at("death", spot[0], spot[1], spot[2] + 1);
+    } else if (e.type === "spawn") {
+        if (e.id === me) { view.yaw = (e.yaw * Math.PI * 2) / 65536; view.pitch = 0; view.kick = 0; sound.play("spawn", 0.7); }
+        else { const at = client.map.spawns[e.at], info = client.players.get(e.id); if (at && info) { world.spawnBurst(at[0], at[1], at[2], colorOf(info)); sound.at("spawn", at[0], at[1], at[2] + 1, 0.8); } }
+    } else if (e.type === "pickup") {
+        const pk = client.map.pickups[e.i];
+        if (pk) sound.at(pk.type === "overcharge" ? "overcharge" : PICKUPS[pk.type].weapon ? "weapon" : "pickup", pk.pos[0], pk.pos[1], pk.pos[2] + 0.8, e.id === me ? 1.2 : 0.8);
+    } else if (e.type === "pad") { if (whereIs(e.id, spot)) sound.at("pad", spot[0], spot[1], spot[2]); }
+    else if (e.type === "over") {
+        const teams = MODES[client.room.mode].teams, mine = client.players.get(me);
+        sound.play((teams ? mine && e.winner === mine.team : e.winner === me) ? "win" : "lose");
+    }
 });
 
 // ------------------------------------------------------------------ input
@@ -296,6 +338,17 @@ game.onUpdate(() => {
     if (room) room.tick();
 });
 
+/** The sounds of my own movement: steps by distance covered, a jump, a landing, a weapon coming to hand. */
+const mine = { ground: true, stride: 0, weapon: 0, vz: 0 };
+function feet(me, dt) {
+    if (!client.joined || !me.alive) { mine.ground = true; mine.stride = 0; mine.weapon = me.weapon; return; }
+    if (me.ground && !mine.ground) sound.play("land", Math.min(1, 0.35 + Math.abs(mine.vz) / 14));
+    else if (!me.ground && mine.ground && me.vz > 2) sound.play("jump", 0.8);
+    if (me.ground) { mine.stride += Math.hypot(me.vx, me.vy) * dt; if (mine.stride > 2.3) { mine.stride = 0; sound.play("step", me.crouched ? 0.4 : 0.8, 0.9 + Math.random() * 0.2); } }
+    if (me.weapon !== mine.weapon) { mine.weapon = me.weapon; sound.play("switch"); }
+    mine.ground = me.ground; mine.vz = me.vz;
+}
+
 /** the eye's height is eased, so stairs and crouching don't jolt the view */
 const eye = { z: 0 }, at = { x: 0, y: 0, z: 0 };
 let since = 1;
@@ -317,6 +370,11 @@ game.onRender((frameDelta, alpha) => {
     camera.yaw = view.yaw; camera.pitch = clamp(view.pitch + view.kick, -1.55, 1.55);
     const fov = me.zoom && me.alive ? WEAPONS[me.weapon].zoom : save.settings.fov;
     camera.fov += (fov - camera.fov) * (1 - Math.exp(-frameDelta * 18));
+    // the weapon in hand and the listener both follow the camera, so work out where it is now
+    camera.update(0);
+    world.syncView(camera, me, frameDelta, client.joined && client.match.phase === "play");
+    sound.listen(camera);
+    feet(me, frameDelta);
 
     world.update(client, frameDelta);
 
@@ -335,9 +393,10 @@ game.onRender((frameDelta, alpha) => {
     hud.update(frameDelta, debug);
 });
 
+await loadCharacters();
 world.loadMap(getMap(save.practice.map));
 show("title");
 game.start();
 
 /** console hook, for poking at the game and for the tools */
-window.breach = { game, world, client, hud, view, input, save, fingerprint, startPractice, playOnline, online, conditions, get room() { return room; }, get screen() { return screen; } };
+window.breach = { game, world, client, hud, sound, view, input, save, fingerprint, startPractice, playOnline, online, conditions, get room() { return room; }, get screen() { return screen; } };

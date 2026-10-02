@@ -56,7 +56,11 @@ void main() {
     vec3 albedo = v_tint.rgb * (0.9 + panel * 0.16);
     albedo *= 1.0 - max(major * 0.42, minor) * u_seams;
     float glow = clamp(v_tint.a - 1.0, 0.0, 1.0);
-    vec3 color = albedo * mix(labLight(v_world, n), vec3(2.4), glow);
+    vec3 light = labLight(v_world, n);
+    // a dull sheen toward the sun, so metal and painted floors aren't chalk
+    vec3 view = normalize(u_camPos - v_world);
+    light += u_sunColor * pow(max(dot(n, normalize(view + u_sunDirection)), 0.0), 28.0) * 0.25 * labShadow(v_world, n);
+    vec3 color = albedo * mix(light, vec3(2.4), glow);
     gl_FragColor = vec4(labFog(color, v_world), 1.0);
 }
 `;
@@ -102,6 +106,73 @@ void main() {
 export function padMaterial() {
     return new ShaderMaterial({ name: "breach-pad", vertex: padVertex, fragment: padFragment, transparent: true, blending: "additive", depthWrite: false, cull: "none",
         uniforms: { u_padColor: new Float32Array([1, 1, 1]), u_fill: 1 } });
+}
+
+const skyVertex = /* glsl */ `
+${projectionChunk}
+attribute vec3 a_position;
+uniform mat4 u_model;
+varying vec3 v_dir;
+void main() {
+    v_dir = a_position;
+    gl_Position = projectLab((u_model * vec4(a_position, 1.0)).xyz);
+}
+`;
+const skyFragment = /* glsl */ `
+uniform vec3 u_sun;         // direction to the sun
+varying vec3 v_dir;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+void main() {
+    vec3 d = normalize(v_dir);
+    float h = clamp(d.z, -0.2, 1.0);
+    // dusk: a band of orange at the horizon, rose above it, deep blue overhead
+    vec3 horizon = vec3(1.25, 0.56, 0.3), rose = vec3(0.62, 0.34, 0.46), zenith = vec3(0.1, 0.12, 0.28);
+    vec3 col = mix(horizon, rose, smoothstep(0.0, 0.16, h));
+    col = mix(col, zenith, smoothstep(0.1, 0.7, h));
+    col = mix(col, vec3(0.2, 0.14, 0.16), smoothstep(0.0, -0.12, h));      // below the horizon: haze
+    // the brighter side of the sky is the side the sun is on
+    float toward = max(dot(normalize(vec3(d.xy, 0.0)), normalize(vec3(u_sun.xy, 0.0))), 0.0);
+    col += horizon * pow(toward, 3.0) * (1.0 - smoothstep(0.0, 0.35, h)) * 0.6;
+    float sun = max(dot(d, u_sun), 0.0);
+    col += vec3(3.4, 2.0, 1.0) * pow(sun, 900.0) + vec3(1.0, 0.5, 0.25) * pow(sun, 24.0) * 0.5;
+    // the first stars, overhead
+    vec2 cell = floor(d.xy / max(d.z, 0.05) * 60.0);
+    col += vec3(0.9) * step(0.9965, hash(cell)) * smoothstep(0.35, 0.8, h);
+    gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+/** The sky outdoors: a gradient, the sun and a few stars, drawn on the inside of a big sphere. */
+export function skyMaterial(sun) {
+    return new ShaderMaterial({ name: "breach-sky", vertex: skyVertex, fragment: skyFragment, cull: "none", depthWrite: false, uniforms: { u_sun: Float32Array.from(sun) } });
+}
+
+const towerFragment = /* glsl */ `
+${lightingChunk}
+varying vec3 v_world;
+varying vec3 v_normal;
+varying vec4 v_tint;        // not a colour here: three random numbers per tower
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+void main() {
+    vec3 n = normalize(v_normal);
+    vec3 body = vec3(0.07, 0.065, 0.1) * (0.7 + 0.6 * v_tint.r) + max(dot(n, u_sunDirection), 0.0) * vec3(0.5, 0.26, 0.14);
+    // windows on the sides: a grid of 3 m bays and 3.2 m floors, some of them lit
+    float side = step(abs(n.z), 0.5);
+    float along = abs(n.x) > 0.5 ? v_world.y : v_world.x;
+    vec2 bay = vec2(along / 3.0, v_world.z / 3.2), cell = floor(bay), f = fract(bay);
+    float glass = step(0.2, f.x) * step(f.x, 0.8) * step(0.25, f.y) * step(f.y, 0.75);
+    float on = step(0.62 + 0.25 * v_tint.g, hash(cell + v_tint.gb * 40.0));
+    vec3 light = mix(vec3(1.5, 1.05, 0.55), vec3(0.7, 0.95, 1.3), step(0.8, hash(cell * 1.7 + 3.0)));
+    vec3 col = body + light * glass * on * side * 0.9;
+    // far towers sink into the haze, but their windows still show
+    float haze = 1.0 - exp(-length(u_camPos - v_world) * 0.0075);
+    gl_FragColor = vec4(mix(col, u_fog.rgb * 0.9, haze * (1.0 - 0.6 * glass * on * side)), 1.0);
+}
+`;
+
+/** Far towers round the roof: dark blocks with lit windows, drawn from the world position (no textures). */
+export function towerMaterial() {
+    return new ShaderMaterial({ name: "breach-tower", vertex, fragment: towerFragment });
 }
 
 /**

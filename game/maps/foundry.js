@@ -69,6 +69,24 @@ both(6.5, 5, 0, 7.5, 6, 1, "crate");
 both(-8.5, 5.5, 0, -7.5, 6.5, 1, "crate");
 both(2.5, 0.5, -2.5, 3.5, 1.5, -1.5, "crate");
 
+// the furnace: glowing vents low in the pit walls and a strip of embers along the pier
+both(-5.06, -3, -2.2, -5, -1, -1.9, "ember");
+both(-4, 3.94, -0.5, -1, 4, -0.3, "ember");
+box(-1.26, -0.6, -2.3, -1.2, 0.6, -2.1, "ember"); box(1.2, -0.6, -2.3, 1.26, 0.6, -2.1, "ember");
+// strip lights along the edges of the bridge
+both(-1.5, -12, DECK, -1.44, 12, DECK + 0.05, "neon");
+
+/** warm lamps hung under the roof and the walkways, and the furnace's own light */
+const lights = [];
+const lamp = (x, y, z, color, radius) => { lights.push({ pos: [x, y, z], color, radius }); lights.push({ pos: [-x, -y, z], color, radius }); };
+const WARM = [1.5, 1.05, 0.62], COOL = [0.75, 0.95, 1.25];
+lamp(-15, 9, 5.2, WARM, 17);
+lamp(-15, -8, 5.2, WARM, 17);
+lamp(-3, 12.5, 2.4, WARM, 11);
+lamp(10, 13.7, 5.6, COOL, 13);
+lamp(-6.5, 4.5, 4.6, WARM, 13);
+lights.push({ pos: [0, 0, -1.2], color: [2.0, 0.7, 0.2], radius: 9 });
+
 export const foundry = {
     id: "foundry",
     name: "Foundry",
@@ -95,6 +113,6 @@ export const foundry = {
         { type: "armour", pos: [-18, -13.7, DECK] }, { type: "armour", pos: [18, 13.7, DECK] },
         { type: "ammo", pos: [5.5, -10.7, 0] }, { type: "ammo", pos: [-5.5, 10.7, 0] },
     ],
-    lights: [],
+    lights,
     waypoints: nav.points, links: nav.links,
 };
