@@ -61,7 +61,11 @@ export class Sound {
     setVolume(v) { this.audio.setVolume("master", v); }
 
     /** @param {import("../engine/Camera.js").Camera} camera */
-    listen(camera) { const e = this.ear; e.x = camera.eye[0]; e.y = camera.eye[1]; e.z = camera.eye[2]; e.rx = camera.right[0]; e.ry = camera.right[1]; }
+    listen(camera) {
+        const e = this.ear, eye = camera.eye, r = camera.right;
+        if (!Number.isFinite(eye[0] + eye[1] + eye[2] + r[0] + r[1])) return;         // keep the last good place
+        e.x = eye[0]; e.y = eye[1]; e.z = eye[2]; e.rx = r[0]; e.ry = r[1];
+    }
 
     /** A sound with no place: the interface, or something that happens to the listener. */
     play(name, volume = 1, pitch = 1) { this.audio.play(name, { volume, pitch }); }
@@ -73,7 +77,13 @@ export class Sound {
         const near = 1 - d / reach, flat = Math.hypot(dx, dy);
         // right in the ear it is centred; further off it leans toward its side, but never all the way
         const pan = flat > 0.5 ? ((dx * e.rx + dy * e.ry) / flat) * Math.min(1, d / 4) * 0.85 : 0;
-        this.audio.play(name, { volume: volume * near * near, pitch: pitch * (0.96 + Math.random() * 0.08), pan });
+        const loud = volume * near * near;
+        // a bad number here must never stop the game: say what it was, once, and play nothing
+        if (!Number.isFinite(pan) || !Number.isFinite(loud)) {
+            if (!this.warned) { this.warned = true; console.warn("BREACH sound: bad position", JSON.stringify({ name, x, y, z, volume, ear: e })); }
+            return;
+        }
+        this.audio.play(name, { volume: loud, pitch: pitch * (0.96 + Math.random() * 0.08), pan });
     }
 
     /** The room's hum: a low drone indoors, a thinner one outside. */

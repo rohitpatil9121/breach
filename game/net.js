@@ -143,7 +143,12 @@ export class Client {
 
     /** Listen: "welcome", "start", "roster", "event" (one simulation event), "shot" (my own, predicted), "chat", "close". */
     on(name, fn) { (this._on.get(name) || this._on.set(name, []).get(name)).push(fn); return this; }
-    emit(name, a, b) { const list = this._on.get(name); if (list) for (const fn of list) fn(a, b); }
+    emit(name, a, b) {
+        const list = this._on.get(name);
+        if (!list) return;
+        // a listener is presentation (an effect, a sound); if one fails, the rest of the snapshot must still be handled
+        for (const fn of list) { try { fn(a, b); } catch (error) { console.error(error); } }
+    }
 
     /** Use a transport that is already connecting. */
     attach(transport) {
