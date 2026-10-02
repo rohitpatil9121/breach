@@ -1,5 +1,7 @@
-import { Entity, Mesh, Geometry, StandardMaterial, BasicMaterial, ParticleSystem, primitives, mat4, quat } from "../engine/index.js";
-import { surfaceMaterial, wedge } from "./gfx.js";
+import { Entity, Mesh, Geometry, StandardMaterial, BasicMaterial, ParticleSystem, ShadowMap, primitives, mat4, quat } from "../engine/index.js";
+import { surfaceMaterial, padMaterial, wedge } from "./gfx.js";
+import { pickupGeometry, PICKUP_COLORS } from "./models.js";
+import { PICKUPS } from "./data.js";
 import { FLAG } from "./protocol.js";
 import { colorOf } from "./data.js";
 
@@ -19,6 +21,9 @@ const MATERIALS = {
     ramp: [0.56, 0.5, 0.3],
     metal: [0.3, 0.33, 0.38],
     crate: [0.66, 0.47, 0.25],
+    roof: [0.36, 0.36, 0.38],
+    block: [0.52, 0.42, 0.36],
+    tank: [0.42, 0.36, 0.3],
 };
 
 
@@ -77,6 +82,11 @@ export class World {
         this.fire = this.scene.add(new ParticleSystem({ capacity: 800, gravity: [0, 0, 1.5], drag: 2.5, name: "fire" }));
         this.fire.castShadow = false; this.fire.frustumCulled = false;
         this._sample = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, flags: 0, weapon: 0, speed: 0 };
+        /** per pickup pad: { ring, item, fill, away } */
+        this.pads = [];
+        this._padMaterial = padMaterial();
+        this._itemMaterial = new StandardMaterial({ vertexColors: true, specular: 0.4 });
+        this.time = 0;
         this._rocketMesh = new Mesh(primitives.sphere(0.12, 10, 8), new StandardMaterial({ color: [1, 0.6, 0.2], emissive: [3, 1.6, 0.5] }));
         /** point lights that flash and fade (muzzle flashes, explosions); a few slots of the engine's 16 */
         this.flashes = [];
@@ -99,6 +109,17 @@ export class World {
             scene.skyColor.set([0.42, 0.43, 0.47]);
             scene.groundColor.set([0.2, 0.19, 0.18]);
             scene.fogColor.set([0.05, 0.05, 0.06]); scene.fogDensity = 0.012;
+            scene.shadow = null;
+        } else {
+            // dusk: a low orange sun, long shadows, a cool sky
+            const sun = [-0.56, -0.36, 0.4], l = Math.hypot(...sun);
+            scene.clearColor.set([0.3, 0.25, 0.36, 1]);
+            scene.sunDirection.set(sun.map((v) => v / l));
+            scene.sunColor.set([1.3, 0.8, 0.5]);
+            scene.skyColor.set([0.3, 0.34, 0.52]);
+            scene.groundColor.set([0.17, 0.13, 0.14]);
+            scene.fogColor.set([0.36, 0.28, 0.36]); scene.fogDensity = 0.005;
+            scene.shadow = new ShadowMap({ cascades: 3, distance: 70, size: 1536, strength: 0.8 });
         }
 
         // one merged mesh for the whole map: every box, shaded by its material tag
@@ -115,6 +136,22 @@ export class World {
         const shell = new Entity({ name: "shell", mesh: new Mesh(Geometry.merge(parts, { uvs: false }), surfaceMaterial()), staticShadow: true });
         shell.frustumCulled = false;
         root.add(shell);
+
+        // pickups: a ring on the ground and the thing itself turning above it
+        this.pads = map.pickups.map((pk) => {
+            const color = PICKUP_COLORS[pk.type];
+            const ringMesh = new Mesh(primitives.plane(1.7, 1.7), this._padMaterial);
+            ringMesh.uniforms = { u_padColor: Float32Array.from(color), u_fill: 1 };
+            const ring = new Entity({ name: "pad-ring", mesh: ringMesh, castShadow: false });
+            ring.setPosition(pk.pos[0], pk.pos[1], pk.pos[2] + 0.02);
+            const item = new Entity({ name: "pickup", mesh: new Mesh(pickupGeometry(pk.type), this._itemMaterial) });
+            item.setPosition(pk.pos[0], pk.pos[1], pk.pos[2] + 0.75);
+            const big = PICKUPS[pk.type].weapon ? 1.5 : 1.25;
+            item.setScale(big);
+            item.interpolate = false;
+            root.add(ring); root.add(item);
+            return { ring, item, mesh: ringMesh, pk, left: 0, base: pk.pos[2] + 0.75 };
+        });
 
         // jump pads: a glowing disc
         const padGlow = new StandardMaterial({ color: [0.1, 0.5, 0.6], emissive: [0.3, 2.2, 2.6] });
@@ -238,8 +275,29 @@ export class World {
         f.base = color; f.light.radius = radius; f.life = f.max = life; f.light.enabled = true;
     }
 
+    /** Pickups: there and turning, or away with the ring filling as the time runs down. */
+    syncPickups(client, dt) {
+        const left = client.pickups;
+        for (let i = 0; i < this.pads.length; i++) {
+            const pad = this.pads[i], total = PICKUPS[pad.pk.type].respawn, seconds = left[i] || 0;
+            // the server sends whole seconds; count down between its updates so the ring moves smoothly
+            if (seconds <= 0) pad.left = 0;
+            else if (pad.left <= 0 || Math.abs(pad.left - seconds) > 1.5) pad.left = seconds;
+            else pad.left = Math.max(seconds - 1, pad.left - dt);
+            const here = seconds <= 0;
+            pad.item.visible = here;
+            pad.mesh.uniforms.u_fill = here ? 1 : Math.max(0, Math.min(0.999, 1 - pad.left / Math.max(total, PICKUPS[pad.pk.type].firstDelay || 0)));
+            if (here) {
+                pad.item.setYaw(this.time * 1.6 + i);
+                pad.item.position[2] = pad.base + Math.sin(this.time * 2.2 + i) * 0.07;
+            }
+        }
+    }
+
     /** Per-frame upkeep: fade tracers and flashes. */
     update(client, dt) {
+        this.time += dt;
+        this.syncPickups(client, dt);
         this.syncPlayers(client);
         this.syncRockets(client, dt);
         this.tracers.update(dt);

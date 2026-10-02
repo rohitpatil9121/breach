@@ -1,4 +1,6 @@
-import { WEAPONS, TICK_RATE, MODES, TEAM_NAMES, colorOf, cssColor } from "./data.js";
+import { WEAPONS, TICK_RATE, MODES, MOVE, TEAM_NAMES, colorOf, cssColor } from "./data.js";
+import { clearLine } from "./sim.js";
+import { FLAG } from "./protocol.js";
 
 /**
  * BREACH: the heads-up display. Plain DOM over the canvas (the engine draws no text).
@@ -18,6 +20,10 @@ export class Hud {
             killer: $("killer"), respawn: $("respawn"), debug: $("debug"), notice: $("notice"),
             scores: $("scores"), scoresTitle: $("scores-title"), scoresSub: $("scores-sub"), scoresBody: $("scores-body") };
         this.scoresAge = 1;
+        this.el.tags = $("tags"); this.el.chat = $("chat-log");
+        /** id → the name tag element */
+        this.tags = new Map();
+        this._s = { x: 0, y: 0, z: 0, flags: 0 }; this._p = { x: 0, y: 0, depth: 0, visible: false };
         this.noticeFor = 0;
         this.el.weapons.innerHTML = WEAPONS.map((w, i) => `<li>${i + 1} ${w.name}</li>`).join("");
         this.slots = [...this.el.weapons.children];
@@ -49,6 +55,48 @@ export class Hud {
         while (this.el.feed.children.length > 5) this.el.feed.lastChild.remove();
         setTimeout(() => li.remove(), 6000);
         if (e.id === me) this.killedBy = e.by && e.by !== me ? `Killed by ${this.name(e.by)}` : "You took yourself out";
+    }
+
+    /** Someone said something. Names and text are other people's: they go in as text, never as markup. */
+    chat(m) {
+        const li = document.createElement("li"), who = document.createElement("b"), info = this.client.players.get(m.id);
+        who.textContent = m.name; who.style.color = cssColor(colorOf(info || { id: m.id, team: 0 }));
+        li.append(who, m.text);
+        this.el.chat.append(li);
+        while (this.el.chat.children.length > 6) this.el.chat.firstChild.remove();
+        setTimeout(() => li.classList.add("old"), 9000);
+        setTimeout(() => li.remove(), 10000);
+    }
+
+    /**
+     * Names over the other players' heads. A teammate's is always shown; an enemy's only when there is
+     * a clear line to them, so a name never gives away someone behind a wall.
+     * @param {import("../engine/Camera.js").Camera} camera
+     */
+    nameTags(camera, width, height) {
+        const c = this.client, s = this._s, p = this._p, me = c.me, teams = c.room && MODES[c.room.mode].teams, mine = c.players.get(c.id);
+        const ex = camera.eye[0], ey = camera.eye[1], ez = camera.eye[2];
+        for (const info of c.players.values()) {
+            if (info.id === c.id) continue;
+            let tag = this.tags.get(info.id);
+            if (!tag) {
+                tag = document.createElement("div"); tag.className = "tag-name";
+                const name = document.createElement("span"); name.textContent = info.name; tag.append(name);
+                this.el.tags.append(tag); this.tags.set(info.id, tag);
+                tag.shown = false; tag.team = -1; tag.style.display = "none";
+            }
+            if (tag.team !== info.team) { tag.team = info.team; tag.style.color = cssColor(colorOf(info)); }
+            let show = c.joined && me.alive && c.sample(info.id, s) && (s.flags & FLAG.alive) !== 0;
+            if (show) {
+                const top = s.z + (s.flags & FLAG.crouched ? MOVE.crouchHeight : MOVE.height) + 0.28, mate = teams && mine && info.team === mine.team;
+                const d = Math.hypot(s.x - ex, s.y - ey, s.z - ez);
+                show = d < (mate ? 80 : 45) && (mate || clearLine(c.map, ex, ey, ez, s.x, s.y, top - 0.4));
+                if (show) { camera.project([s.x, s.y, top], width, height, p); show = p.visible; }
+                if (show) tag.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px) translate(-50%, -100%)`;
+            }
+            if (tag.shown !== show) { tag.shown = show; tag.style.display = show ? "" : "none"; }
+        }
+        for (const [id, tag] of this.tags) if (!c.players.has(id)) { tag.remove(); this.tags.delete(id); }
     }
 
     /** A line of text near the top of the screen for a few seconds. */

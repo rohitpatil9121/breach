@@ -33,6 +33,8 @@
             <p id="respawn"></p>
         </div>
         <div id="notice" hidden></div>
+        <div id="tags"></div>
+        <ul id="chat-log"></ul>
         <div id="scores" hidden>
             <h2 id="scores-title">Scores</h2>
             <p id="scores-sub"></p>
@@ -43,6 +45,11 @@
         </div>
         <pre id="debug" hidden></pre>
     </div>
+
+    <form id="chat-form" hidden>
+        <label for="chat-input">Say</label>
+        <input id="chat-input" type="text" maxlength="120" autocomplete="off" spellcheck="false">
+    </form>
 
     <main id="title" class="screen">
         <div class="card wide">
@@ -103,6 +110,7 @@
                 <dt>C</dt><dd>crouch</dd>
                 <dt>1 – 5, Q E, wheel</dt><dd>weapons</dd>
                 <dt>Tab</dt><dd>scores</dd>
+                <dt>Enter</dt><dd>chat</dd>
                 <dt>F3</dt><dd>numbers</dd>
             </dl>
         </div>

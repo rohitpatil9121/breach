@@ -65,6 +65,45 @@ export function surfaceMaterial(options = {}) {
     return new ShaderMaterial({ name: "breach-surface", vertex, fragment, uniforms: { u_seams: options.seams ?? 1 } });
 }
 
+const padVertex = /* glsl */ `
+${projectionChunk}
+attribute vec3 a_position;
+attribute vec2 a_uv;
+uniform mat4 u_model;
+varying vec2 v_uv;
+void main() {
+    v_uv = a_uv;
+    gl_Position = projectLab((u_model * vec4(a_position, 1.0)).xyz);
+}
+`;
+const padFragment = /* glsl */ `
+uniform vec3 u_padColor;
+uniform float u_fill;       // 0 = just taken, 1 = the pickup is there
+uniform float u_time;
+varying vec2 v_uv;
+void main() {
+    vec2 p = v_uv * 2.0 - 1.0;
+    float r = length(p);
+    float turn = atan(p.x, p.y) / 6.2831853 + 0.5;           // 0..1 round the ring
+    float ring = smoothstep(0.70, 0.73, r) * (1.0 - smoothstep(0.87, 0.90, r));
+    float lit = step(turn, u_fill);
+    float ready = step(1.0, u_fill);
+    float pulse = mix(1.0, 0.75 + 0.25 * sin(u_time * 3.0), ready);
+    float disc = (1.0 - smoothstep(0.0, 0.68, r)) * mix(0.05, 0.3, ready);
+    float glow = ring * mix(0.22, 2.2 * pulse, lit) + disc;
+    gl_FragColor = vec4(u_padColor * glow, 1.0);
+}
+`;
+
+/**
+ * The ring on the ground under a pickup. It fills clockwise while the pickup is away and pulses when it
+ * is back. One material for every pad: each mesh sets its own colour and fill (mesh.uniforms).
+ */
+export function padMaterial() {
+    return new ShaderMaterial({ name: "breach-pad", vertex: padVertex, fragment: padFragment, transparent: true, blending: "additive", depthWrite: false, cull: "none",
+        uniforms: { u_padColor: new Float32Array([1, 1, 1]), u_fill: 1 } });
+}
+
 /**
  * A ramp as a smooth wedge, in world coordinates (the simulation walks it as stairs; see game/maps).
  * @param {{ min: number[], max: number[], dir: string }} r

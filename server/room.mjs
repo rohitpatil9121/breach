@@ -84,8 +84,9 @@ export class Room {
         const client = { id, send, name: cleanText(name, NAME_MAX) || "Player", queue: [], lastSeq: 0, credit: CREDIT_MAX, ping: 0, pingSent: 0, pingN: 0, tokens: BURST, chatAt: -1000 };
         this.clients.set(id, client);
         if (!this.host) this.host = id;
-        addPlayer(this.state, this.map, id, client.name, { team: this.smallerTeam() });
+        // a bot gives up its place first, so the newcomer takes the side that is now short
         this.fillBots();
+        addPlayer(this.state, this.map, id, client.name, { team: this.smallerTeam() });
         this.sendTo(client, { t: "welcome", id, room: this.info(), tick: this.state.tick });
         this.roster();
         this.log(`${this.code}: ${client.name} joined (${this.humans} here)`);
@@ -125,7 +126,9 @@ export class Room {
         const want = Math.max(0, Math.min(MATCH.maxPlayers, this.settings.bots) - this.humans);
         const bots = this.state.players.filter((p) => p.bot || this.brains.has(p.id));
         for (let i = bots.length; i > want; i--) {
-            const bot = bots[i - 1];
+            // the bot to go is the newest on the bigger team
+            const big = this.smallerTeam() === 1 ? 2 : 1, at = bots.findLastIndex((b) => !b.team || b.team === big);
+            const [bot] = bots.splice(at < 0 ? bots.length - 1 : at, 1);
             removePlayer(this.state, bot.id); this.brains.delete(bot.id); this.inputs.delete(bot.id);
         }
         for (let i = bots.length; i < want; i++) {

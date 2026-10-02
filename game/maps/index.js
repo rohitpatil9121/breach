@@ -1,4 +1,5 @@
 import { foundry } from "./foundry.js";
+import { rooftops } from "./rooftops.js";
 
 /**
  * Maps. A map is plain data (see foundry.js); compileMap() turns it into what the simulation and the
@@ -11,7 +12,7 @@ import { foundry } from "./foundry.js";
  * @module game/maps
  */
 
-export const MAP_DEFS = { foundry };
+export const MAP_DEFS = { foundry, rooftops };
 export const MAP_LIST = Object.keys(MAP_DEFS);
 
 /** tallest stair a ramp is cut into */

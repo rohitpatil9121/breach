@@ -101,6 +101,18 @@ select option { background: #14181f; color: var(--ink); }
 .foot { margin: 24px 0 0; font-size: 13px; color: var(--dim); }
 .foot a { color: var(--ink); }
 
+/* ------------------------------------------------------------------ name tags and chat */
+#tags { position: absolute; inset: 0; overflow: hidden; }
+.tag-name { position: absolute; left: 0; top: 0; padding: 1px 6px; font-size: 12px; font-weight: 600; white-space: nowrap; border-radius: 3px; background: rgba(8, 10, 14, 0.55); border-bottom: 2px solid currentColor; will-change: transform; }
+.tag-name span { color: var(--ink); }
+#chat-log { position: absolute; left: 22px; bottom: 104px; margin: 0; padding: 0; list-style: none; max-width: min(46vw, 460px); font-size: 14px; text-shadow: 0 1px 2px #000; }
+#chat-log li { margin-top: 3px; padding: 2px 8px; background: rgba(8, 10, 14, 0.5); border-radius: 3px; overflow-wrap: anywhere; transition: opacity 0.6s; }
+#chat-log li.old { opacity: 0; }
+#chat-log b { font-weight: 700; margin-right: 6px; }
+#chat-form { position: fixed; left: 22px; bottom: 66px; display: flex; align-items: center; gap: 8px; width: min(60vw, 460px); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+#chat-form[hidden] { display: none; }
+#chat-form input { flex: 1; min-height: 36px; background: rgba(8, 10, 14, 0.85); }
+
 /* ------------------------------------------------------------------ scores and notices */
 #scores { position: absolute; left: 50%; top: 14%; transform: translateX(-50%); width: min(92vw, 520px); padding: 16px 20px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
 #scores[hidden], #notice[hidden] { display: none; }

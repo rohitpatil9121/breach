@@ -195,6 +195,27 @@ client.on("welcome", () => {
     $("invite").textContent = "Copy invite link";
 });
 client.on("start", () => { world.loadMap(client.map); hud.notice("New round"); });
+client.on("chat", (m) => hud.chat(m));
+
+// chat: Enter opens the box, Enter sends, Escape or an empty line closes it
+const chatForm = $("chat-form"), chatInput = $("chat-input");
+function openChat() {
+    if (screen !== "play" || !client.joined) return;
+    for (const code of [...input.down]) input.release(code);     // the keys held while typing would otherwise stay held
+    chatForm.hidden = false;
+    chatInput.value = "";
+    chatInput.focus();
+}
+function closeChat() { chatForm.hidden = true; chatInput.blur(); canvas.focus(); }
+chatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = cleanText(chatInput.value, 120);
+    if (text) client.send({ t: "chat", text });
+    closeChat();
+});
+chatInput.addEventListener("keydown", (e) => { if (e.code === "Escape") closeChat(); e.stopPropagation(); });
+chatInput.addEventListener("blur", () => { chatForm.hidden = true; });
+addEventListener("keydown", (e) => { if ((e.code === "Enter" || e.code === "KeyT") && chatForm.hidden && screen === "play" && e.target === canvas || (e.code === "Enter" && chatForm.hidden && screen === "play" && e.target === document.body)) { e.preventDefault(); openChat(); } });
 client.on("close", (reason) => {
     // keep the room's code in the box, so one press of Join tries again
     const was = client.room && client.room.code !== "PRACTICE" ? client.room.code : online.last && online.last.room;
@@ -309,6 +330,7 @@ game.onRender((frameDelta, alpha) => {
             + `\nreplayed ${n.replayed}   corrections ${n.corrections}   last error ${n.lastError.toFixed(3)} m`;
     }
     if (screen === "play" && !input.pointer.locked && !coarse && client.match.phase === "play") hud.notice("Click to take the mouse", 0.3);
+    hud.nameTags(camera, canvas.clientWidth, canvas.clientHeight);
     hud.scores(input.isDown("scores"), frameDelta);
     hud.update(frameDelta, debug);
 });
