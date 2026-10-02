@@ -8,8 +8,8 @@
  *      │  ramp ↗        ░░░░ bridge ░░░░                      │
  *      │      ┌───────door──────║──────────────────┐          │
  *      │      │                 ║                  │          │
- *      │   machine     ramp ↘ [ pit ]             door  pad   │
- *      │      door            [ pit ] ↖ ramp       machine    │
+ *      │machine        ramp ↘ [ pit ]             door  pad   │
+ *      │      door            [ pit ] ↖ ramp        machine   │
  *      │      │                 ║                  │          │
  *      │      └─────────────────║──────door────────┘          │
  *      │                    ░░░░ bridge ░░░░        ↙ ramp    │
@@ -17,6 +17,8 @@
  *            ◄─────────────────────── south walkway (z = 3)
  * @module game/maps/foundry
  */
+
+import { nav } from "./foundry.nav.js";
 
 const boxes = [], ramps = [];
 const box = (x0, y0, z0, x1, y1, z1, mat) => boxes.push({ min: [x0, y0, z0], max: [x1, y1, z1], mat });
@@ -54,7 +56,9 @@ box(-1.5, -12, WALL, 1.5, 12, DECK, "deck");
 for (const x of [-1, 5, 11, 17]) both(x - 0.25, 12, 0, x + 0.25, 12.5, WALL, "metal");
 
 // machines and cover in the corridor, so no straight is a shooting gallery
-both(-17, -1.5, 0, -14, 1.5, 3.4, "metal");
+both(-19.5, -1.5, 0, -16.5, 1.5, 3.4, "metal");
+// the pier that carries the bridge over the pit: it also hides the two ends of the pit from each other
+box(-1.2, -1.2, -2.5, 1.2, 1.2, WALL, "metal");
 both(1, 9, 0, 3, 12, WALL, "metal");
 both(-16.5, 6.5, 0, -15.5, 7.5, 1, "crate");
 both(-16.5, 7.5, 0, -15.5, 8.5, 1, "crate");
@@ -72,14 +76,25 @@ export const foundry = {
     boxes, ramps,
     /** x, y, z of the feet, and the yaw to face */
     spawns: [
-        [-18, 14, 0, -0.6], [18, -14, 0, 2.54],
-        [-18, -8, 0, 0.9], [18, 8, 0, -2.24],
-        [17, 13.7, DECK, 3.14], [-17, -13.7, DECK, 0],
+        [-18.5, 14.5, 0, -0.7], [18.5, -14.5, 0, 2.44],
+        [-18.5, -14.5, 0, 0.7], [18.5, 14.5, 0, -2.44],
+        [-9.5, -7.5, 0, 0.6], [9.5, 7.5, 0, -2.54],
         [-3.5, -2.5, -2.5, 0.6], [3.5, 2.5, -2.5, -2.54],
-        [-8.5, -6.5, 0, 0.7], [8.5, 6.5, 0, -2.44],
     ],
     /** stand on the pad and it throws you: here, from the pit room floor up onto the bridge */
     jumpPads: [{ pos: [8, 0, 0], radius: 0.9, velocity: [-8.2, 0, 12.6] }],
-    pickups: [],
+    /** a weapon for each range, two of most things so neither end goes short, and one prize in the open */
+    pickups: [
+        { type: "overcharge", pos: [0, 0, DECK] },
+        { type: "launcher", pos: [0, -2, -2.5] },
+        { type: "rifle", pos: [10, 13.7, DECK] }, { type: "rifle", pos: [-10, -13.7, DECK] },
+        { type: "shotgun", pos: [9.3, -7, 0] }, { type: "shotgun", pos: [-9.3, 7, 0] },
+        { type: "smg", pos: [15.3, 0, 0] }, { type: "smg", pos: [-15.3, 0, 0] },
+        { type: "health", pos: [0, -6.5, 0] }, { type: "health", pos: [0, 6.5, 0] },
+        { type: "health", pos: [-12.5, -13.7, 0] }, { type: "health", pos: [12.5, 13.7, 0] },
+        { type: "armour", pos: [-18, -13.7, DECK] }, { type: "armour", pos: [18, 13.7, DECK] },
+        { type: "ammo", pos: [5.5, -10.7, 0] }, { type: "ammo", pos: [-5.5, 10.7, 0] },
+    ],
     lights: [],
+    waypoints: nav.points, links: nav.links,
 };

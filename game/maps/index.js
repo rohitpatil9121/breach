@@ -39,6 +39,19 @@ function rampSolids(r) {
     return out;
 }
 
+/**
+ * The waypoint graph as the bots read it: for each point, the links leaving it with their length.
+ * kind 0 = walk, 1 = jump, 2 = jump pad.
+ */
+function compileNav(points, links) {
+    const out = points.map(() => []);
+    for (const [a, b, kind] of links) {
+        const p = points[a], q = points[b];
+        out[a].push({ to: b, kind, cost: Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) + (kind === 1 ? 1.5 : 0) });
+    }
+    return { points, out, links };
+}
+
 const cache = new Map();
 
 /** @param {string} id */
@@ -78,6 +91,6 @@ export function compileMap(def) {
         grid: { x0, y0, nx, ny, cell: CELL, cells },
         bounds: { min: [x0, y0, z0], max: [x1, y1, z1] },
         spawns: def.spawns, pickups: def.pickups || [], jumpPads: def.jumpPads || [], lights: def.lights || [],
-        waypoints: def.waypoints || [], links: def.links || [],
+        nav: compileNav(def.waypoints || [], def.links || []),
     };
 }

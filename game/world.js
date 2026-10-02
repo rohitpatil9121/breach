@@ -1,6 +1,7 @@
 import { Entity, Mesh, Geometry, StandardMaterial, BasicMaterial, ParticleSystem, primitives, mat4, quat } from "../engine/index.js";
 import { surfaceMaterial, wedge } from "./gfx.js";
 import { FLAG } from "./protocol.js";
+import { colorOf } from "./data.js";
 
 /**
  * BREACH: the 3D scene. Presentation only: it reads the map and what the client knows of the match and
@@ -20,10 +21,6 @@ const MATERIALS = {
     crate: [0.66, 0.47, 0.25],
 };
 
-/** one colour per player in a free-for-all; teams use TEAM_COLORS */
-export const PLAYER_COLORS = [[0.95, 0.45, 0.2], [0.25, 0.7, 0.95], [0.6, 0.85, 0.3], [0.9, 0.35, 0.6], [0.95, 0.8, 0.25], [0.6, 0.5, 0.95], [0.3, 0.85, 0.7], [0.85, 0.85, 0.9]];
-export const TEAM_COLORS = { 1: [0.98, 0.5, 0.16], 2: [0.2, 0.72, 0.95] };
-export function colorOf(info) { return TEAM_COLORS[info.team] || PLAYER_COLORS[(info.id - 1) % PLAYER_COLORS.length]; }
 
 /** tracer colour per weapon (HDR: above 1 blooms) */
 const TRACER = [[2.2, 1.9, 1.2], [2.4, 1.6, 0.8], [2.4, 1.3, 0.6], [1.2, 2.2, 2.6], [2.6, 1.4, 0.6]];

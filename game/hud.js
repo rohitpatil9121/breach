@@ -1,4 +1,4 @@
-import { WEAPONS, TICK_RATE, MODES } from "./data.js";
+import { WEAPONS, TICK_RATE, MODES, TEAM_NAMES, colorOf, cssColor } from "./data.js";
 
 /**
  * BREACH: the heads-up display. Plain DOM over the canvas (the engine draws no text).
@@ -15,7 +15,10 @@ export class Hud {
         this.client = client;
         this.el = { health: $("health"), armour: $("armour"), ammo: $("ammo"), weapon: $("weapon"), weapons: $("weapons"), crosshair: $("crosshair"),
             hitmarker: $("hitmarker"), scope: $("scope"), damage: $("damage"), clock: $("clock"), score: $("score"), feed: $("feed"), dead: $("dead"),
-            killer: $("killer"), respawn: $("respawn"), debug: $("debug") };
+            killer: $("killer"), respawn: $("respawn"), debug: $("debug"), notice: $("notice"),
+            scores: $("scores"), scoresTitle: $("scores-title"), scoresSub: $("scores-sub"), scoresBody: $("scores-body") };
+        this.scoresAge = 1;
+        this.noticeFor = 0;
         this.el.weapons.innerHTML = WEAPONS.map((w, i) => `<li>${i + 1} ${w.name}</li>`).join("");
         this.slots = [...this.el.weapons.children];
         /** what is on screen now, so the DOM is only touched when something changes */
@@ -48,6 +51,48 @@ export class Hud {
         if (e.id === me) this.killedBy = e.by && e.by !== me ? `Killed by ${this.name(e.by)}` : "You took yourself out";
     }
 
+    /** A line of text near the top of the screen for a few seconds. */
+    notice(text, seconds = 3) { this.el.notice.textContent = text; this.el.notice.hidden = false; this.noticeFor = seconds; }
+
+    /**
+     * The scoreboard. Shown while its key is held, and as the results when the match ends.
+     * Built from text nodes: names come from other people.
+     */
+    scores(show, dt) {
+        const el = this.el, c = this.client, m = c.match, over = m.phase === "over";
+        show = show || over;
+        this.set("scoresShown", show, (v) => { el.scores.hidden = !v; this.scoresAge = 1; });
+        if (!show || (this.scoresAge += dt) < 0.25) return;
+        this.scoresAge = 0;
+        const teams = c.room && MODES[c.room.mode].teams, players = [...c.players.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+        let title = c.room ? MODES[c.room.mode].name : "Scores";
+        if (over) {
+            if (teams) title = m.winner ? `${TEAM_NAMES[m.winner]} wins` : "A draw";
+            else title = m.winner ? (m.winner === c.id ? "You win" : `${this.name(m.winner)} wins`) : "A draw";
+        }
+        el.scoresTitle.textContent = title;
+        el.scoresSub.textContent = over ? `Next round in ${Math.ceil(m.overTicks / TICK_RATE)}` : c.map ? `${c.map.name} · first to ${MODES[c.room.mode].scoreLimit}` : "";
+        const rows = [];
+        const row = (p) => {
+            const tr = document.createElement("tr"), name = document.createElement("td"), swatch = document.createElement("span");
+            swatch.className = "swatch"; swatch.style.background = cssColor(colorOf(p));
+            name.append(swatch, p.name);
+            if (p.bot) { const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "bot"; name.append(tag); }
+            if (p.id === c.hostId && !p.bot && c.players.size > 1 && c.room.code !== "PRACTICE") { const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "host"; name.append(tag); }
+            tr.append(name);
+            for (const v of [p.kills, p.deaths, p.bot ? "" : p.ping]) { const td = document.createElement("td"); td.textContent = v; tr.append(td); }
+            if (p.id === c.id) tr.className = "me";
+            return tr;
+        };
+        if (teams) for (const t of [1, 2]) {
+            const head = document.createElement("tr"), td = document.createElement("td");
+            head.className = "team"; td.colSpan = 4; td.textContent = `${TEAM_NAMES[t]}  ${m.teamScore[t]}`; td.style.color = cssColor(colorOf({ id: 0, team: t }));
+            head.append(td); rows.push(head);
+            for (const p of players) if (p.team === t) rows.push(row(p));
+        } else for (const p of players) rows.push(row(p));
+        el.scoresBody.replaceChildren(...rows);
+    }
+
     /** @param {number} dt @param {string} [debug] text for the numbers panel */
     update(dt, debug) {
         const c = this.client, me = c.me, el = this.el, w = WEAPONS[me.weapon];
@@ -76,6 +121,7 @@ export class Hud {
             this.set("killer", this.killedBy, (v) => { el.killer.textContent = v; });
             this.set("respawn", Math.ceil(me.respawn / TICK_RATE), (v) => { el.respawn.textContent = `Back in ${v}`; });
         }
+        if (this.noticeFor > 0 && (this.noticeFor -= dt) <= 0) el.notice.hidden = true;
         if (debug !== undefined && !el.debug.hidden) el.debug.textContent = debug;
     }
 }

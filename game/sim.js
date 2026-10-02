@@ -153,9 +153,14 @@ const teams = (state) => MODES[state.mode].teams;
 /** Can a hurt b? (Never a teammate; always oneself.) */
 export const hostile = (state, a, b) => a !== b && !(teams(state) && a.team === b.team);
 
-/** The spawn point farthest from every living enemy; a random one when there are none. */
+/**
+ * A spawn point far from every living enemy: one of those at least three quarters as far as the farthest,
+ * picked at random, so the same corner isn't handed out every time (and can't be camped).
+ */
 function chooseSpawn(state, map, p) {
     let best = -1, bestDistance = -1;
+    const far = spawnScratch;
+    far.length = 0;
     for (let i = 0; i < map.spawns.length; i++) {
         const s = map.spawns[i];
         let nearest = Infinity, taken = false;
@@ -166,15 +171,21 @@ function chooseSpawn(state, map, p) {
             if (hostile(state, p, q) && d < nearest) nearest = d;
         }
         if (taken) continue;
-        if (nearest === Infinity) nearest = 1e6 + random(state);       // nobody to avoid: any free one
+        if (nearest === Infinity) nearest = 1e6;                        // nobody to avoid: any free one
+        far.push(i, nearest);
         if (nearest > bestDistance) { bestDistance = nearest; best = i; }
     }
-    return map.spawns[best < 0 ? Math.floor(random(state) * map.spawns.length) : best];
+    if (best < 0) return Math.floor(random(state) * map.spawns.length);
+    // distances are squared, so three quarters of the way is 9/16
+    let n = 0;
+    for (let k = 0; k < far.length; k += 2) if (far[k + 1] >= bestDistance * 0.5625) far[n++] = far[k];
+    return far[Math.floor(random(state) * n)];
 }
+const spawnScratch = [];
 
 /** Put a player on a spawn point with a fresh loadout. */
 export function spawnPlayer(state, map, p) {
-    const s = chooseSpawn(state, map, p);
+    const at = chooseSpawn(state, map, p), s = map.spawns[at];
     p.x = s[0]; p.y = s[1]; p.z = s[2];
     p.vx = p.vy = p.vz = 0;
     p.yaw = quantizeYaw(s[3]); p.pitch = 0;
@@ -185,7 +196,7 @@ export function spawnPlayer(state, map, p) {
     p.respawn = 0; p.overcharge = 0;
     p.protect = Math.round(PLAYER.spawnProtection * TICK_RATE);
     for (let i = 0; i < HISTORY; i++) { p.hist[i * 4] = p.x; p.hist[i * 4 + 1] = p.y; p.hist[i * 4 + 2] = p.z; p.hist[i * 4 + 3] = 0; }
-    state.events.push({ type: "spawn", id: p.id, yaw: p.yaw });
+    state.events.push({ type: "spawn", id: p.id, yaw: p.yaw, at });
 }
 
 // ------------------------------------------------------------------ collision
@@ -462,7 +473,7 @@ export function damage(state, victim, amount, by, weapon, head) {
     const soak = Math.min(victim.armour, Math.round(amount * PLAYER.armourAbsorb));
     victim.armour -= soak;
     victim.health -= amount - soak;
-    state.events.push({ type: "hurt", id: victim.id, by: by ? by.id : 0, amount, head: head ? 1 : 0 });
+    state.events.push({ type: "hurt", id: victim.id, by: by ? by.id : 0, amount, w: weapon, head: head ? 1 : 0 });
     if (victim.health <= 0) kill(state, victim, by, weapon, head);
     return amount;
 }

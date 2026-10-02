@@ -124,3 +124,23 @@ export const MATCH = Object.freeze({
  */
 export const HISTORY = 64;
 export const MAX_REWIND = 18;
+
+/** Colours (linear rgb). One per player in a free-for-all; teams use a pair. */
+export const PLAYER_COLORS = [[0.95, 0.45, 0.2], [0.25, 0.7, 0.95], [0.6, 0.85, 0.3], [0.9, 0.35, 0.6], [0.95, 0.8, 0.25], [0.6, 0.5, 0.95], [0.3, 0.85, 0.7], [0.85, 0.85, 0.9]];
+/**
+ * Team colour pairs. Each pair differs in lightness as well as hue, so it survives the common kinds of
+ * colour blindness; the default is orange against blue, which is safe for red-green blindness.
+ */
+export const TEAM_SCHEMES = Object.freeze({
+    "orange-blue": { name: "Orange and blue", 1: [0.98, 0.5, 0.14], 2: [0.18, 0.62, 0.98] },
+    "yellow-purple": { name: "Yellow and purple", 1: [0.98, 0.84, 0.2], 2: [0.56, 0.3, 0.92] },
+    "white-red": { name: "White and red", 1: [0.92, 0.92, 0.95], 2: [0.9, 0.16, 0.2] },
+});
+export const TEAM_NAMES = ["", "Amber", "Cobalt"];
+export const teamColors = { scheme: "orange-blue" };
+/** @param {{ id: number, team: number }} info */
+export function colorOf(info) {
+    const scheme = TEAM_SCHEMES[teamColors.scheme] || TEAM_SCHEMES["orange-blue"];
+    return scheme[info.team] || PLAYER_COLORS[(info.id - 1) % PLAYER_COLORS.length];
+}
+export const cssColor = (c) => `rgb(${c.map((v) => Math.round(Math.min(1, v) * 255)).join(",")})`;

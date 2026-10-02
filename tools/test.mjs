@@ -46,7 +46,7 @@ console.log("movement on foundry");
     check("a wall stops the player", near(t.p.x, -19.5 + MOVE.radius, 1e-9) && t.p.ground, `x ${t.p.x}`);
 }
 {
-    const t = solo("foundry", -18, -8, 0, Math.PI / 2);
+    const t = solo("foundry", -14, -8, 0, Math.PI / 2);
     t.run(0.5);
     t.input.my = 127;
     t.run(1.5);
@@ -96,7 +96,7 @@ console.log("movement on foundry");
     check("the jump pad lands on the bridge", near(t.p.z, 3, 1e-9) && Math.abs(t.p.x) < 1.5 && t.p.ground, `x ${t.p.x.toFixed(2)} z ${t.p.z.toFixed(2)}`);
 }
 {
-    const t = solo("foundry", -3, 0, -2.5, 0);
+    const t = solo("foundry", -4.5, -3.5, -2.5, Math.PI / 2);
     t.run(0.3);
     t.input.buttons = BTN.crouch; t.input.my = 127;
     t.run(1);
@@ -130,7 +130,7 @@ const count = (events, type) => events.filter((e) => e.type === type).length;
 
 console.log("shooting");
 {
-    const d = duel([-18, -8, 0], [-18, 4, 0], 1.0);
+    const d = duel([-14, -8, 0], [-14, 4, 0], 1.0);
     let shots = 0;
     while (d.b.alive && shots < 20) { d.shoot(); shots++; }
     check("the pistol kills in five body shots", shots === 5, `${shots} shots`);
@@ -138,16 +138,16 @@ console.log("shooting");
     d.tick(Math.round(PLAYER.respawn * 60) - 14);
     const s = d.map.spawns.map((sp) => Math.hypot(sp[0] - d.a.x, sp[1] - d.a.y, sp[2] - d.a.z));
     const far = Math.hypot(d.b.x - d.a.x, d.b.y - d.a.y, d.b.z - d.a.z);
-    check("the dead respawn after three seconds, at the spawn farthest from the enemy", d.b.alive && near(far, Math.max(...s), 0.01), `${far.toFixed(1)} m away`);
+    check("the dead respawn after three seconds, at a spawn far from the enemy", d.b.alive && far >= Math.max(...s) * 0.75 - 0.01, `${far.toFixed(1)} m away, the farthest is ${Math.max(...s).toFixed(1)}`);
 }
 {
-    const d = duel([-18, -8, 0], [-18, 4, 0], HIT.headZ);
+    const d = duel([-14, -8, 0], [-14, 4, 0], HIT.headZ);
     let shots = 0;
     while (d.b.alive && shots < 20) { d.shoot(); shots++; }
     check("four pistol shots to the head", shots === 4 && d.events.some((e) => e.type === "hurt" && e.head), `${shots} shots`);
 }
 {
-    const d = duel([-18, -8, 0], [-18, 4, 0], 1.0);
+    const d = duel([-14, -8, 0], [-14, 4, 0], 1.0);
     d.input.buttons = BTN.fire;
     d.tick(60);
     check("holding the trigger fires the pistol once", count(d.events, "shot") === 1, `${count(d.events, "shot")} shots`);
@@ -157,23 +157,23 @@ console.log("shooting");
     check("and the SMG for as long as it is held", count(d.events, "shot") === 6, `${count(d.events, "shot")} shots in half a second`);
 }
 {
-    const d = duel([-18, -8, 0], [-8, -6, 0], 1.0);         // the pit room's west wall is between them
+    const d = duel([-14, -8, 0], [-8, -6, 0], 1.0);         // the pit room's west wall is between them
     d.shoot();
     check("a wall stops a shot", d.b.health === 100 && count(d.events, "shot") === 1);
 }
 {
-    const d = duel([-18, -8, 0], [-18, 4, 0], 1.0);
+    const d = duel([-14, -8, 0], [-14, 4, 0], 1.0);
     d.b.armour = 50;
     d.arm(3); d.input.buttons = BTN.zoom; d.tick();
     d.input.buttons = BTN.zoom | BTN.fire; d.tick();
     check("armour takes two thirds", d.b.health === 75 && d.b.armour === 0, `health ${d.b.health} armour ${d.b.armour}`);
-    const e = duel([-18, -8, 0], [-18, 4, 0], HIT.headZ);
+    const e = duel([-14, -8, 0], [-14, 4, 0], HIT.headZ);
     e.arm(3); e.input.buttons = BTN.zoom; e.tick();
     e.input.buttons = BTN.zoom | BTN.fire; e.tick();
     check("a rifle headshot kills outright", !e.b.alive);
 }
 {
-    const d = duel([-18, -8, 0], [-18, 4, 0], 1.0);
+    const d = duel([-14, -8, 0], [-14, 4, 0], 1.0);
     d.b.protect = 60;
     d.shoot();
     check("spawn protection holds", d.b.health === 100);
@@ -182,19 +182,19 @@ console.log("shooting");
     check("and ends when its owner fires", d.a.protect === 0);
 }
 {
-    const d = duel([-18, -8, 0], [-18, 4, 0], 1.0, { state: { mode: "tdm" }, sameTeam: true });
+    const d = duel([-14, -8, 0], [-14, 4, 0], 1.0, { state: { mode: "tdm" }, sameTeam: true });
     d.shoot();
     check("teammates can't hurt each other", d.b.health === 100);
 }
 {
-    const close = duel([-18, -8, 0], [-18, -5, 0], 1.0), far = duel([-18, -8, 0], [-18, 12, 0], 1.0);
+    const close = duel([-14, -8, 0], [-14, -5, 0], 1.0), far = duel([-14, -8, 0], [-14, 11, 0], 1.0);
     close.arm(2); close.shoot(); far.arm(2); far.shoot();
     check("the shotgun is strong up close and weak far away", 100 - close.b.health >= 80 && 100 - far.b.health <= 20, `${100 - close.b.health} at 3 m, ${100 - far.b.health} at 20 m`);
 }
 {
     // the target strafes; the shooter aims at where it was 10 ticks ago, as a client 10 ticks behind would
     const run = (lag) => {
-        const d = duel([-18, -13, 0], [-19, 8, 0], 1.0);
+        const d = duel([-14, -13, 0], [-15, 9.5, 0], 1.0);
         d.inputs.set(2, { seq: 0, mx: 0, my: 127, buttons: 0, yaw: quantizeYaw(0), pitch: 0 });
         const trail = [];
         for (let i = 0; i < 25; i++) { d.tick(); trail.push([d.b.x, d.b.y, d.b.z]); }
@@ -204,19 +204,19 @@ console.log("shooting");
         return 100 - d.b.health;
     };
     check("lag compensation: a shot at where the target was lands when rewound", run(10) === 20 && run(0) === 0, `rewound ${run(10)}, not rewound ${run(0)}`);
-    const d = duel([-18, -13, 0], [-19, 8, 0], 1.0);
+    const d = duel([-14, -13, 0], [-15, 9.5, 0], 1.0);
     d.inputs.set(2, { seq: 0, mx: 0, my: 127, buttons: 0, yaw: quantizeYaw(0), pitch: 0 });
     d.tick(60);
-    d.aimAt(-19, 8, 1.0);
+    d.aimAt(-15, 9.5, 1.0);
     d.input.lag = 60; d.input.buttons = BTN.fire; d.tick();
     check("but never further back than the cap", d.b.health === 100);
 }
 {
-    const d = duel([-18, -8, 0], [-18, 2, 0], 0.0);
+    const d = duel([-14, -8, 0], [-14, 2, 0], 0.0);
     d.arm(4);
     d.shoot();
     check("a rocket at the feet hurts and throws the target", d.b.health < 30 && d.b.health > 0 && count(d.events, "explode") === 1, `health ${d.b.health}`);
-    const e = duel([-18, -8, 0], [-18, 4, 0], 1.0);
+    const e = duel([-14, -8, 0], [-14, 4, 0], 1.0);
     e.arm(4); e.input.pitch = quantizePitch(-1.4);
     e.shoot();
     check("a rocket at your own feet hurts half as much and lifts you", e.a.health < 100 && e.a.health >= 50 && e.a.z > 0.5, `health ${e.a.health}, z ${e.a.z.toFixed(2)}`);

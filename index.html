@@ -8,9 +8,9 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <canvas id="view" tabindex="0" aria-label="The arena, seen through the player's eyes"></canvas>
+    <canvas id="view" tabindex="0" aria-label="The arena, seen through the eyes of the player"></canvas>
 
-    <div id="hud" aria-hidden="true">
+    <div id="hud" aria-hidden="true" hidden>
         <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
         <div id="hitmarker"></div>
         <div id="scope"></div>
@@ -32,23 +32,70 @@
             <p id="killer"></p>
             <p id="respawn"></p>
         </div>
+        <div id="notice" hidden></div>
+        <div id="scores" hidden>
+            <h2 id="scores-title">Scores</h2>
+            <p id="scores-sub"></p>
+            <table>
+                <thead><tr><th scope="col">Player</th><th scope="col">Kills</th><th scope="col">Deaths</th><th scope="col">Ping</th></tr></thead>
+                <tbody id="scores-body"></tbody>
+            </table>
+        </div>
         <pre id="debug" hidden></pre>
     </div>
 
-    <div id="overlay" class="screen">
-        <div class="card">
+    <main id="title" class="screen">
+        <div class="card wide">
             <h1>BREACH</h1>
-            <p class="lede">Stage 2: shoot. The targets stand still.</p>
-            <button id="play" class="primary">Click to play</button>
+            <p class="lede">Arena shooter. Two to eight players, five weapons, five-minute rounds.</p>
+
+            <label class="field" for="name">Your name
+                <input id="name" type="text" maxlength="16" autocomplete="nickname" spellcheck="false">
+            </label>
+
+            <section aria-labelledby="h-practice">
+                <h2 id="h-practice">Practice</h2>
+                <p class="hint">Offline, against bots. Runs in this page, with no server.</p>
+                <div class="row">
+                    <label class="field" for="p-map">Map <select id="p-map"></select></label>
+                    <label class="field" for="p-mode">Mode <select id="p-mode"></select></label>
+                    <label class="field" for="p-bots">Bots <select id="p-bots"></select></label>
+                    <label class="field" for="p-skill">Skill <select id="p-skill"><option value="1">Easy</option><option value="2">Medium</option><option value="3">Hard</option></select></label>
+                </div>
+                <button id="practice" class="primary">Play against bots</button>
+            </section>
+
+            <section aria-labelledby="h-online">
+                <h2 id="h-online">Online</h2>
+                <p class="hint" id="server-status">Looking for a server…</p>
+                <div class="row">
+                    <button id="quick" disabled>Quick play</button>
+                    <button id="create" disabled>Create a room</button>
+                </div>
+                <form id="join-form" class="row">
+                    <label class="field" for="code">Room code <input id="code" type="text" maxlength="4" autocomplete="off" spellcheck="false" placeholder="ABCD"></label>
+                    <button id="join" disabled>Join</button>
+                </form>
+            </section>
+            <p class="foot">Built on <a href="https://rohitpatil9121.github.io/projection_library/">Projection Lab</a>.</p>
+        </div>
+    </main>
+
+    <div id="pause" class="screen" hidden>
+        <div class="card">
+            <h1 class="small">Paused</h1>
+            <p class="lede" id="pause-note">The match carries on behind this menu.</p>
+            <button id="resume" class="primary">Back to the match</button>
+            <button id="leave">Leave the match</button>
             <dl class="keys">
                 <dt>W A S D</dt><dd>move</dd>
                 <dt>Mouse</dt><dd>look, fire, right button to zoom</dd>
                 <dt>Space</dt><dd>jump</dd>
                 <dt>Shift</dt><dd>sprint</dd>
                 <dt>C</dt><dd>crouch</dd>
-                <dt>1 – 5, wheel</dt><dd>weapons</dd>
+                <dt>1 – 5, Q E, wheel</dt><dd>weapons</dd>
+                <dt>Tab</dt><dd>scores</dd>
                 <dt>F3</dt><dd>numbers</dd>
-                <dt>Esc</dt><dd>release the mouse</dd>
             </dl>
         </div>
     </div>
