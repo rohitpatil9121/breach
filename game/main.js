@@ -358,8 +358,10 @@ client.on("shot", (me) => {
     const w = WEAPONS[me.weapon];
     world.fireView(me.weapon);
     sound.play(WEAPON_SOUND[me.weapon], 0.8, 0.97 + Math.random() * 0.06);
-    if (!reducedMotion()) view.kick = Math.min(0.06, view.kick + (w.projectile ? 0.03 : 0.006 + w.damage * w.pellets * 0.00025));
+    tally.shots += w.pellets || 1;
 });
+/** my shooting this match, for the numbers panel: pellets fired, hits that hurt someone, damage dealt */
+const tally = { shots: 0, hits: 0, damage: 0 };
 const spot = [0, 0, 0];
 /** Where a player is right now, as far as this client knows (for placing a sound or an effect). */
 function whereIs(id, out) {
@@ -386,7 +388,7 @@ client.on("event", (e) => {
         const d = Math.hypot(e.x - client.me.x, e.y - client.me.y, e.z - client.me.z);
         if (d < 12) game.juice.shake(0.7 * (1 - d / 12));
     } else if (e.type === "hurt") {
-        if (e.by === me && e.id !== me) { hud.hitMarker(false); sound.play("hit", 0.9, e.head ? 1.5 : 1); }
+        if (e.by === me && e.id !== me) { tally.hits++; tally.damage += e.amount; hud.hitMarker(false, e.amount, e.head); sound.play("hit", 0.9, e.head ? 1.5 : 1); }
         if (e.id === me) { hud.hurtFlash(e.amount); sound.play("hurt", 0.9); game.juice.shake(Math.min(0.5, e.amount / 120)); }
     } else if (e.type === "kill") {
         hud.kill(e);
@@ -445,8 +447,8 @@ game.onRender((frameDelta, alpha) => {
     eye.z += (target - eye.z) * (1 - Math.exp(-frameDelta * (me.ground ? 20 : 45)));
     if (Math.abs(target - eye.z) > 1) eye.z = target;
     camera.position[0] = at.x; camera.position[1] = at.y; camera.position[2] = eye.z;
-    view.kick *= Math.exp(-frameDelta * 9);
-    camera.yaw = view.yaw; camera.pitch = clamp(view.pitch + view.kick, -1.55, 1.55);
+    // the view is exactly the aim: recoil moves the weapon in the hand, never the crosshair off the shot
+    camera.yaw = view.yaw; camera.pitch = clamp(view.pitch, -1.55, 1.55);
     const fov = me.zoom && me.alive ? WEAPONS[me.weapon].zoom : settings.fov;
     camera.fov += (fov - camera.fov) * (1 - Math.exp(-frameDelta * 18));
     controls.zoomScale = camera.fov / settings.fov;         // slower turning while zoomed, in proportion
@@ -465,7 +467,8 @@ game.onRender((frameDelta, alpha) => {
         debug = `pos ${me.x.toFixed(1)} ${me.y.toFixed(1)} ${me.z.toFixed(2)}   speed ${Math.hypot(me.vx, me.vy).toFixed(1)}   ${me.ground ? "ground" : "air"}${me.crouched ? " crouch" : ""}`
             + `\n${Math.round(game.loop.fps)} fps  ${game.loop.frameMs.toFixed(1)} ms   ${s.drawCalls} draws   ${s.shadowCalls} shadow draws   ${(s.triangles / 1000).toFixed(1)}k tris`
             + `\nping ${client.ping} ms   in ${(n.bytesIn / 1000).toFixed(1)} kB/s   out ${(n.bytesOut / 1000).toFixed(1)} kB/s   ${n.snaps} snaps/s`
-            + `\nreplayed ${n.replayed}   corrections ${n.corrections}   last error ${n.lastError.toFixed(3)} m`;
+            + `\nreplayed ${n.replayed}   corrections ${n.corrections}   last error ${n.lastError.toFixed(3)} m`
+            + `\nfired ${tally.shots}   hits ${tally.hits}   damage ${tally.damage}   ${client.room ? client.room.mode : ""}   aim ${view.yaw.toFixed(2)} ${view.pitch.toFixed(2)}`;
     }
     if (screen === "play" && !input.pointer.locked && !controls.coarse && input.gamepadIndex < 0 && client.match.phase === "play") hud.notice("Click to take the mouse", 0.3);
     hud.nameTags(camera, canvas.clientWidth, canvas.clientHeight);

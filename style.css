@@ -50,6 +50,9 @@ button.primary:hover { filter: brightness(1.1); }
     background: linear-gradient(45deg, transparent 46%, #fff 46% 54%, transparent 54%), linear-gradient(-45deg, transparent 46%, #fff 46% 54%, transparent 54%);
     -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px); mask: radial-gradient(circle, transparent 5px, #000 6px); }
 #hitmarker.kill { background: linear-gradient(45deg, transparent 44%, var(--bad) 44% 56%, transparent 56%), linear-gradient(-45deg, transparent 44%, var(--bad) 44% 56%, transparent 56%); }
+.dmg { position: absolute; top: calc(50% - 30px); font: 700 20px var(--mono); color: #fff; text-shadow: 0 1px 3px #000; animation: dmg 0.7s ease-out forwards; }
+.dmg.head { color: #ffd23f; font-size: 24px; }
+@keyframes dmg { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-46px); opacity: 0; } }
 #scope { position: absolute; inset: 0; opacity: 0; background: radial-gradient(circle at center, transparent 0 30vh, rgba(0, 0, 0, 0.9) 31vh); transition: opacity 0.08s; }
 #scope.on { opacity: 1; }
 #damage { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 120px 30px rgba(255, 40, 30, 0.75); }

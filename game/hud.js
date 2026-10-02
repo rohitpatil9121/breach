@@ -38,7 +38,18 @@ export class Hud {
     name(id) { return this.client.players.get(id)?.name || "someone"; }
 
     /** A shot of mine landed. */
-    hitMarker(kill) { this.hit = kill ? 0.5 : 0.22; this.el.hitmarker.classList.toggle("kill", !!kill); }
+    hitMarker(kill, amount, head) {
+        this.hit = kill ? 0.5 : 0.22;
+        this.el.hitmarker.classList.toggle("kill", !!kill);
+        if (!amount) return;
+        // the damage, floating up from the crosshair: proof the shot counted, and how much
+        const n = document.createElement("span");
+        n.className = head ? "dmg head" : "dmg";
+        n.textContent = amount;
+        n.style.left = `calc(50% + ${Math.round((Math.random() - 0.5) * 50) + 26}px)`;
+        this.el.hitmarker.parentNode.append(n);
+        setTimeout(() => n.remove(), 700);
+    }
     /** I was hurt. */
     hurtFlash(amount) { this.hurt = Math.min(1, this.hurt + 0.25 + amount / 100); }
 
